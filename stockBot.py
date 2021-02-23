@@ -25,12 +25,19 @@ url = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
 driv = webdriver.Chrome()
 driv.get(url)
 
-# Sets time for driver to wait for elements to show up, change as needed.
-WAIT_ELEM = 2
-XPATH_VAL = "/html/body/div[2]/div[5]/div/div/div/div[2]/div/div/div/div/div/div[1]/div/div/a[1]"
-# Click on a trivial button just to test things out.
-elem = WebDriverWait(driv, WAIT_ELEM).until(EC.presence_of_element_located((By.XPATH, XPATH_VAL)))
-elem.click()
+# Holds xpath value of the stock name.
+STOCK = "//a[@class='tv-screener__symbol apply-common-tooltip']"
+# Holds xpath value of the stock percent change.
+STOCK_PCT_CHG = "//td[@class='tv-data-table__cell tv-screener-table__cell tv-screener-table__cell--up tv-screener-table__cell--big tv-screener-table__cell--with-marker']"
+# Grab a list of the stock elements (stock names listed on tradingview).
+stockElems, stockPctElems = driv.find_elements_by_xpath(STOCK), driv.find_elements_by_xpath(STOCK_PCT_CHG)
+# List only the names of the stocks.
+stockNames, stockPctChg = [s.text for s in stockElems], [pct.text for pct in stockPctElems]
 
+# Print the names of the stocks to make sure things are working right.
+print("Today's Top Gainer Stocks:")
+print("\n".join("{} {}".format(s, pct) for s, pct in zip(stockNames, stockPctChg)))
+
+sleep(5)
 driv.close()
 driv.quit()
