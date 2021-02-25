@@ -19,4 +19,3 @@
   have passed since, then add the detail in, if not then just send the notification, reset y% and repeat.
     - Notification = "X Stock grew by Y%" + ifZ =: (in less than Z minutes) + "in Top Gainers! From prePos to currPos,
       sitting at currPct!"
-

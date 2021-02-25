@@ -3,9 +3,9 @@ Python program that retrieves data from tradingview.com, makes decisions based o
 
 # How To Use
 If you want to run the program locally, first you have to make sure the market is open (9:30am-4pm ET), simply run it in a terminal and it will prompt you to enter: 
-- List/Site refresh rate: t minutes
-- Time interval cutoff to check changing stocks: z minutes
-- Percentage change desired: y%
+- List/Site refresh rate: `t` minutes
+- Time interval cutoff to check changing stocks: `z` minutes
+- Percentage change desired: `y%`
 Once you entered your configuration for the bot, it will immediately begin working and send you notifications when your criteria has been met, and it will keep working until 4pm ET.
 
 ## Caveats
