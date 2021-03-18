@@ -16,14 +16,18 @@ class Stock:
     #     TICKER (str): is the name of the stock, or ticker.                     #
     #     price (float): price of the stock.                                     #
     #     basePrice (float): baseline price of stock to compare and get pct chg. #
-    #     pctChg (float): current percent change from last t minutes price.      #
+    #     OG_PRICE (float): original price, will be the absolute for day (8:30). #
+    #     absPctChg (float): percent change since OG_PRICE, absolute for day.    #
+    #     pctChgAfter (float): percent change if it has met desired already.     #
     #     metCrit (bool): tells if it hit desired pct chg already.               #
     #----------------------------------------------------------------------------#
-    def __init__(self, TICKER, price, basePrice, pctChg, metCrit):
+    def __init__(self, TICKER, price, basePrice, OG_PRICE, absPctChg, pctChgAfter, metCrit):
         self.TICKER = TICKER
         self.price = price
         self.basePrice = basePrice
-        self.pctChg = pctChg
+        self.OG_PRICE = OG_PRICE
+        self.absPctChg = absPctChg
+        self.pctChgAfter = pctChgAfter
         self.metCrit = metCrit
 
     #---------------------------------------------------------------#
@@ -32,4 +36,4 @@ class Stock:
     #     (str): string that represents a stock object.             #
     #---------------------------------------------------------------#
     def __str__(self):
-        return f"{self.TICKER}\t${self.price}\t{self.pctChg:.2f}%"
+        return f"{self.TICKER}\t${self.price}\t{self.absPctChg:.2f}%"
