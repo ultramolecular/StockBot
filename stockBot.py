@@ -15,6 +15,7 @@ from platform import system
 ''' TODO: 
     - Figure out some way for the program to run on itself and know when to
       start processing data.
+    - Start developing a way for the program to keep track of pctChg of past 1m, 5m, 10m
 '''
 
 #----------------------------------------------------------------------------#
@@ -26,6 +27,8 @@ from platform import system
 #DRIV_LOC = "/usr/bin/chromedriver"
 #BIN_LOC = "/usr/share/google-chrome"
 options = webdriver.ChromeOptions()
+# For Windows, this will disable the extraneous warnings displayed.
+#options.add_experimental_option('excludeSwitches', ['enable-logging'])
 options.headless = True
 options.add_argument("window-size=1920x1080")
 #options.binary_location = BIN_LOC
@@ -33,16 +36,18 @@ driv = webdriver.Chrome(options = options)
 # Uncomment if you are not doing headless.
 #driv.set_window_size(1080, 1044)
 
-#-------------------------------------------------------------------------#
-# All program constants are declared here - stock ticker and price paths, #
-# login paths, tradingview.com urls and credentials, the sound file       #
-# for notification, and the market open/close hours.                      #
-#-------------------------------------------------------------------------#
+#--------------------------------------------------------------------------#
+# All program constants are declared here - stock ticker and price paths,  #
+# login paths, tradingview.com urls and credentials, the sound file        #
+# for notification, and the market open/close hours.                       #
+# NOTE: Sometimes tradingview updates/moves/changes the way fields of the  #
+# page are located, so updating the xpath is necessary in those instances. #
+#--------------------------------------------------------------------------#
 STOCK_PATH = "//a[@class='tv-screener__symbol apply-common-tooltip']"
 STOCK_PRICES_PATH = "//td[@class='tv-data-table__cell tv-screener-table__cell tv-screener-table__cell--big tv-screener-table__cell--with-marker']"
 MAIN_LOGIN_PATH = "/html/body/div[2]/div[3]/div/div[4]/span[2]/a"
-LOGIN_PATH = "/html/body/div[11]/div/div[2]/div/div/div/div/div/div/form/div[5]/div[2]/button/span[2]"
-EMAIL_PATH = "/html/body/div[11]/div/div[2]/div/div/div/div/div/div/div[1]/div[4]/div/span"
+LOGIN_PATH = "/html/body/div[9]/div/div[2]/div/div/div/div/div/div/form/div[5]/div[2]/button/span[2]"
+EMAIL_PATH = "/html/body/div[9]/div/div[2]/div/div/div/div/div/div/div[1]/div[4]/div/span"
 CRED_BOX = "//input[@class='tv-control-material-input tv-signin-dialog__input tv-control-material-input__control']"
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"

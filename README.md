@@ -1,5 +1,5 @@
 # StockBot
-Python program that retrieves stock data from tradingview.com, tracks them at every user-determined time interval, and send notifications to user when it has met their desired growth rates.
+Python program that retrieves stock data from [tradingview.com](https://tradingview.com), tracks them at every user-determined time interval, and send notifications to user when it has met their desired growth rates.
 
 ---
 
