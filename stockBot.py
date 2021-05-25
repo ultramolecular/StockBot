@@ -15,7 +15,11 @@ from platform import system
 ''' TODO: 
     - Figure out some way for the program to run on itself and know when to
       start processing data.
-    - Start developing a way for the program to keep track of pctChg of past 1m, 5m, 10m
+    - Start developing a way for the program to keep track of pctChg of past 1m, 5m, 10m, 20m
+        * make use of getAge(), enqueue all the way up to 20th price, once each interval is met can
+        perform calculations on it, keep enqueuing as normal but pop the first one in queue each time after it.
+    - Make program check if everything is same as last refresh, instead of waiting the inputted
+      refresh time, manually refresh after 10 seconds.
 '''
 
 #----------------------------------------------------------------------------#
@@ -103,7 +107,7 @@ def play(file, osType):
         os.system("aplay " + file + "&")
 
 # CONTINUE PROGRAM IF IT IS DURING MARKET DAY & HOURS, OR BYPASS FOR DEVELOPMENT.
-if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:
+if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:    
     print("Market: OPEN\n")
     refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
     pctChgDes = float(input(r"Enter percent change desired (y% format): "))
@@ -122,6 +126,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
     driv.get(GAINS_URL)
     # This will be the main list that will hold the stocks for the program.
     gainers = []
+
     # Begins our main loop, where we wait refresh rate and only continue if we still in market hours.
     while dt.now() < MARKET_CLOSE:
         # Grab a list of the stock elements (stock names & prices listed on tradingview).
@@ -134,6 +139,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
             i += 6
         # Flag to let program know whether to sort gainers list or not.
         changed = False
+
         # Go through each newly fetched stocks and if they are in our gainers list, update, if not add them.
         for stock, price in zip(stockNames, stockPrices):
             stk = inGainers(gainers, lambda s: s.TICKER == stock)
@@ -159,14 +165,16 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
                     stk.basePrice = price
                     play(SOUND, OS)
             else:
-                gainers.append(Stock(stock, price, price, price, 0.0, 0.0, False))
+                gainers.append(Stock(stock, price, price, price))
                 changed = True
+
         # If the list changed, sort list from highest gainers to lowest gainers.
         if changed:
             gainers.sort(key = lambda s: s.absPctChg, reverse = True)
         showTop5(gainers)
         sleep(refRateDes)
         driv.refresh()
+
     print("Market closed now, come back next market day!")
 else:
     print("Market: CLOSED, return next market day!\n")
