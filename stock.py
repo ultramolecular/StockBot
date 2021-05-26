@@ -1,12 +1,11 @@
-#------------------------------------------------------------#
-# Author:             Josiah Valdez                          #
-# Began Development:  March 16, 2021                         #
-#                                                            #
-# File for the stock class used in stockBot.py, which will   #
-# keep track of each stock's individual name, current price, #
-# baseline price (price it started off as @ 8:30am CDT) and  #
-# percent change. This should streamline the process.        # 
-#------------------------------------------------------------#
+#-------------------------------------------------------------------------------------------------------#
+# Author:             Josiah Valdez                                                                     #
+# Began Development:  March 16, 2021                                                                    #
+#                                                                                                       #
+# Stock class that keeps track of each individual stock's ticker,price, original price (@ 8:30 am CDT), #
+# absolute pct chg, the time it entered the gainers list and its age, and a queue/list of its past      #
+# prices up to the last 20 minutes.                                                                     #
+#-------------------------------------------------------------------------------------------------------#
 
 class Stock:
     #-----------------------------------------------------------------------------#
@@ -46,13 +45,13 @@ class Stock:
         self.pastPrices.append(price)
         qLen = len(self.pastPrices)
         if self.age >= 1:
-            self.oneMinPctChg = ((self.pastPrices[qLen - 2] - price) / price) * 100
+            self.oneMinPctChg = ((price - self.pastPrices[qLen - 2]) / self.pastPrices[qLen - 2]) * 100
         if self.age >= 5:
-            self.fiveMinPctChg = ((self.pastPrices[qLen - 6] - price) / price) * 100
+            self.fiveMinPctChg = ((price - self.pastPrices[qLen - 6]) / self.pastPrices[qLen - 6]) * 100
         if self.age >= 10:
-            self.tenMinPctChg = ((self.pastPrices[qLen - 11] - price) / price) * 100
+            self.tenMinPctChg = ((price - self.pastPrices[qLen - 11]) / self.pastPrices[qLen - 11]) * 100
         if self.age >= 20:
-            self.twentyMinPctChg = ((self.pastPrices[qLen - 21] - price) / price) * 100
+            self.twentyMinPctChg = ((price - self.pastPrices[qLen - 21]) / self.pastPrices[qLen - 21]) * 100
             # Make sure that once we are at the 20 price limit, to pop the first price.
             self.pastPrices.pop(0)
         
@@ -66,11 +65,12 @@ class Stock:
         s = f"{self.TICKER}\t${self.price}\tAbs Pct-Chg: {self.absPctChg:.2f}%"
         # Check for age to add appropriate interval pct chgs.
         if self.age >= 1:
-            s += f"\t1m Pct-Chg: {self.oneMinPctChg}%"
+            s += f"\t1m Pct-Chg: {self.oneMinPctChg:.2f}%"
         if self.age >= 5:
-            s += f"\t5m Pct-Chg: {self.fiveMinPctChg}%"
+            s += f"\t5m Pct-Chg: {self.fiveMinPctChg:.2f}%"
         if self.age >= 10:
-            s += f"\t10m Pct-Chg: {self.tenMinPctChg}%"
+            s += f"\t10m Pct-Chg: {self.tenMinPctChg:.2f}%"
         if self.age >= 20:
-            s += f"\t20m Pct-Chg: {self.twentyMinPctChg}%"
+            s += f"\t20m Pct-Chg: {self.twentyMinPctChg:.2f}%"
+        s += f"\tPast Prices: {self.pastPrices}"
         return s

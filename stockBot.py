@@ -1,7 +1,11 @@
-#----------------------------------------------------#
-# Author:             Josiah Valdez                  #
-# Began Development:  February, 7, 2021              #
-#----------------------------------------------------#
+#-----------------------------------------------------------------------------------------#
+# Author:             Josiah Valdez                                                       #
+# Began Development:  February, 7, 2021                                                   #
+#                                                                                         #
+# This is a program that uses selenium to extract data from tradingview.com top gainers,  #
+# calculate and store their prices and percent changes, and send notifications given the  #
+# desired change from the user. It is in constant development, and is sometimes unstable. #
+#-----------------------------------------------------------------------------------------#
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -17,9 +21,6 @@ from platform import system
     LEGEND: [1] - highest priority [2] - next priority [3] - last priority
 
     - [1] Check if +1 indexing for pastPrices on stock class updateIntervals function is accurate
-
-    - [2] Make program check if everything is same as last refresh, instead of waiting the inputted
-      refresh time, manually refresh after 10 seconds.
 
     - [3] Figure out some way for the program to run on itself and know when to
       start processing data.
@@ -38,12 +39,12 @@ from platform import system
 options = webdriver.ChromeOptions()
 # For Windows, this will disable the extraneous warnings displayed.
 #options.add_experimental_option('excludeSwitches', ['enable-logging'])
-options.headless = True
-options.add_argument("window-size=1920x1080")
+# options.headless = True
+# options.add_argument("window-size=1920x1080")
 #options.binary_location = BIN_LOC
 driv = webdriver.Chrome(options = options)
 # Uncomment if you are not doing headless.
-#driv.set_window_size(1080, 1044)
+driv.set_window_size(1080, 1044)
 
 #--------------------------------------------------------------------------#
 # All program constants are declared here - stock ticker and price paths,  #
@@ -60,9 +61,9 @@ EMAIL_PATH = "/html/body/div[9]/div/div[2]/div/div/div/div/div/div/div[1]/div[4]
 CRED_BOX = "//input[@class='tv-control-material-input tv-signin-dialog__input tv-control-material-input__control']"
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
-EMAIL = ""
+EMAIL = "Awesome835459@hotmail.com"
 PASS = ""
-SOUND = "swiftly.wav"
+SOUND = ""
 OS = system()
 MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
@@ -73,7 +74,8 @@ MARKET_CLOSE = dt.now().replace(hour = 15, minute = 0)
 # Searches for a stock of interest in the list and gets it    #
 # back to user if it exists.                                  #
 # Args:                                                       #
-#     gainers (list): the list that contains the gainers.     # #     filt (lambda): the filter which will be the ticker.     #
+#     gainers (list): the list that contains the gainers.     # 
+#     filt (lambda): the filter which will be the ticker.     #
 # Returns:                                                    #
 #     stock (Stock): the stock of interest if it exists.      #
 #     None (null): None/null if it does not exist.            #
@@ -91,7 +93,7 @@ def inGainers(gainers, filt):
 #--------------------------------------#
 def showTop5(gainers):
     if len(gainers) > 0:
-        print("-" * 100, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
+        print("-" * 200, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
         for g in range(5):
             print(gainers[g])
     
@@ -151,7 +153,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
                 # Calculate each stock's absolute percent change and it if has met criteria, it's relative percent change.
                 newAbsPctChg = ((price - stk.OG_PRICE) / stk.OG_PRICE) * 100
                 stk.pctChgAfter = ((price - stk.basePrice) / stk.basePrice) * 100 if stk.metCrit else 0
-                # Update the 1m, 5m, 10m, 20m intervals
+                # Update the 1m, 5m, 10m, 20m intervals.
                 stk.updateIntervals(price, dt.now())
                 # Only update its pct chg and price if it changed...
                 if newAbsPctChg != stk.absPctChg:
@@ -178,12 +180,13 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
         if changed:
             gainers.sort(key = lambda s: s.absPctChg, reverse = True)
         showTop5(gainers)
-        sleep(refRateDes)
+        # Wait the desired refresh rate if the list has changed, or refresh after 10 seconds if not.
+        sleep(refRateDes if changed else 10)
         driv.refresh()
 
-    print("Market closed now, come back next market day!")
+    print("\nMarket closed now, come back next market day!\n")
 else:
-    print("Market: CLOSED, return next market day!\n")
+    print("\nMarket: CLOSED, return next market day!\n")
 
 driv.close()
 driv.quit()
