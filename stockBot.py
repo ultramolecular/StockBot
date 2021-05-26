@@ -13,13 +13,18 @@ from datetime import datetime as dt
 from platform import system
 
 ''' TODO: 
-    - Figure out some way for the program to run on itself and know when to
-      start processing data.
-    - Start developing a way for the program to keep track of pctChg of past 1m, 5m, 10m, 20m
-        * make use of getAge(), enqueue all the way up to 20th price, once each interval is met can
-        perform calculations on it, keep enqueuing as normal but pop the first one in queue each time after it.
-    - Make program check if everything is same as last refresh, instead of waiting the inputted
+
+    LEGEND: [1] - highest priority [2] - next priority [3] - last priority
+
+    - [1] Check if +1 indexing for pastPrices on stock class updateIntervals function is accurate
+
+    - [2] Make program check if everything is same as last refresh, instead of waiting the inputted
       refresh time, manually refresh after 10 seconds.
+
+    - [3] Figure out some way for the program to run on itself and know when to
+      start processing data.
+
+    - [3] Make an easy and visually appealing gui for users.
 '''
 
 #----------------------------------------------------------------------------#
@@ -68,8 +73,7 @@ MARKET_CLOSE = dt.now().replace(hour = 15, minute = 0)
 # Searches for a stock of interest in the list and gets it    #
 # back to user if it exists.                                  #
 # Args:                                                       #
-#     gainers (list): the list that contains the gainers.     #
-#     filt (lambda): the filter which will be the ticker.     #
+#     gainers (list): the list that contains the gainers.     # #     filt (lambda): the filter which will be the ticker.     #
 # Returns:                                                    #
 #     stock (Stock): the stock of interest if it exists.      #
 #     None (null): None/null if it does not exist.            #
@@ -147,6 +151,8 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
                 # Calculate each stock's absolute percent change and it if has met criteria, it's relative percent change.
                 newAbsPctChg = ((price - stk.OG_PRICE) / stk.OG_PRICE) * 100
                 stk.pctChgAfter = ((price - stk.basePrice) / stk.basePrice) * 100 if stk.metCrit else 0
+                # Update the 1m, 5m, 10m, 20m intervals
+                stk.updateIntervals(price, dt.now())
                 # Only update its pct chg and price if it changed...
                 if newAbsPctChg != stk.absPctChg:
                     changed = True
@@ -165,7 +171,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
                     stk.basePrice = price
                     play(SOUND, OS)
             else:
-                gainers.append(Stock(stock, price, price, price))
+                gainers.append(Stock(stock, price, dt.now()))
                 changed = True
 
         # If the list changed, sort list from highest gainers to lowest gainers.
