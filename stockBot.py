@@ -20,7 +20,10 @@ from platform import system
 
     LEGEND: [1] - highest priority [2] - next priority [3] - last priority
 
-    - [1] Check if +1 indexing for pastPrices on stock class updateIntervals function is accurate
+    - [1] Have different gainers list, absolute gainers (entire day), 1m gainers, 5m gainers, 10m gainers, etc
+
+    - [3] Try to have the notifications be in a different color, also the percent changes whether they're
+      positive (green) or negative (red)
 
     - [3] Figure out some way for the program to run on itself and know when to
       start processing data.
@@ -61,9 +64,9 @@ EMAIL_PATH = "/html/body/div[9]/div/div[2]/div/div/div/div/div/div/div[1]/div[4]
 CRED_BOX = "//input[@class='tv-control-material-input tv-signin-dialog__input tv-control-material-input__control']"
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
-EMAIL = "Awesome835459@hotmail.com"
+EMAIL = ""
 PASS = ""
-SOUND = ""
+SOUND = "swiftly.wav"
 OS = system()
 MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
@@ -97,20 +100,20 @@ def showTop5(gainers):
         for g in range(5):
             print(gainers[g])
     
-#---------------------------------------------------#
-# Play sound based on OS and given sound file path. #
-# Uses winsound if on Windows, os if MacOS/Linux.   #
-# Args:                                             #
-#     file (str): sound file path.                  #
-#     osType (str): platform/os of the user.        #
-#---------------------------------------------------#
+#---------------------------------------------------------#
+# Play sound based on OS and given sound file path.       #
+# Uses winsound if on Windows, playsound if MacOS/Linux.  #
+# Args:                                                   #
+#     file (str): sound file path.                        #
+#     osType (str): platform/os of the user.              #
+#---------------------------------------------------------#
 def play(file, osType):
     if osType == "Windows":
         import winsound
         winsound.PlaySound(file, winsound.SND_ASYNC)
     else:
-        import os
-        os.system("aplay " + file + "&")
+        from playsound import playsound
+        playsound(file)
 
 # CONTINUE PROGRAM IF IT IS DURING MARKET DAY & HOURS, OR BYPASS FOR DEVELOPMENT.
 if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:    
@@ -139,6 +142,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
         stockElems, stockPriceElems = driv.find_elements_by_xpath(STOCK_PATH), driv.find_elements_by_xpath(STOCK_PRICES_PATH)
         # Create list of stocks and a list of their respective prices.
         stockNames, stockPrices = [s.text for s in stockElems], []
+        # For the prices, as of right now it is getting the other stats as well, so every other 6th is the correct element.
         i = 0
         while i < len(stockPriceElems):
             stockPrices.append(float(stockPriceElems[i].text))
@@ -151,26 +155,26 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
             stk = inGainers(gainers, lambda s: s.TICKER == stock)
             if stk is not None:
                 # Calculate each stock's absolute percent change and it if has met criteria, it's relative percent change.
-                newAbsPctChg = ((price - stk.OG_PRICE) / stk.OG_PRICE) * 100
-                stk.pctChgAfter = ((price - stk.basePrice) / stk.basePrice) * 100 if stk.metCrit else 0
+                newAbsPctChg = stk.getNewAbs(price)
+                stk.setNewAfter(price)
                 # Update the 1m, 5m, 10m, 20m intervals.
                 stk.updateIntervals(price, dt.now())
                 # Only update its pct chg and price if it changed...
-                if newAbsPctChg != stk.absPctChg:
+                if newAbsPctChg != stk.getAbs():
                     changed = True
-                    stk.absPctChg = newAbsPctChg
-                    stk.price = price
+                    stk.setAbs(newAbsPctChg)
+                    stk.setPrice(price)
                 # If current stock's percent change meets desired and it has already not met the desired...
-                if stk.absPctChg >= pctChgDes and not stk.metCrit:
+                if stk.getAbs() >= pctChgDes and not stk.hasMetCrit():
                     # Send notification, flag it as met, and set base price as this price.
-                    print(f"\n{stk.TICKER} grew by {stk.absPctChg:.2f}% in top gainers! Check it out!")
-                    stk.metCrit = True
-                    stk.basePrice = price
+                    print(f"\n{stk.TICKER} grew by {stk.getAbs():.2f}% in top gainers! Check it out!")
+                    stk.didMeetCrit()
+                    stk.setBasePrice(price)
                     play(SOUND, OS)
                 # If current stock has already met desired pct chg, then check if it met the desired chg for after.
-                elif stk.metCrit and stk.pctChgAfter >= pctChgAfter:
-                    print(f"\n{stk.TICKER} grew by {stk.pctChgAfter:.2f}% even after it grew by {pctChgDes}%! Check it out!")
-                    stk.basePrice = price
+                elif stk.hasMetCrit() and stk.getAfter() >= pctChgAfter:
+                    print(f"\n{stk.getTicker()} grew by {stk.getAfter():.2f}% even after it grew by {pctChgDes}%! Check it out!")
+                    stk.setBasePrice(price)
                     play(SOUND, OS)
             else:
                 gainers.append(Stock(stock, price, dt.now()))
@@ -183,6 +187,8 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
         # Wait the desired refresh rate if the list has changed, or refresh after 10 seconds if not.
         sleep(refRateDes if changed else 10)
         driv.refresh()
+        # Wait for a second as a buffer to the data scraping.
+        sleep(1)
 
     print("\nMarket closed now, come back next market day!\n")
 else:
