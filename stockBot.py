@@ -47,7 +47,7 @@ from stock import Stock
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path= env_path)
 options = webdriver.ChromeOptions()
-# For Windows, this will disable the extraneous warnings displayed.
+# NOTE: For Windows, this will disable the extraneous warnings displayed.
 # options.add_experimental_option('excludeSwitches', ['enable-logging'])
 # options.headless = True
 # options.add_argument("window-size=1920x1080")
@@ -61,7 +61,7 @@ driv.set_window_size(1080, 1044)
 # login paths, tradingview.com urls and credentials, the sound file        #
 # for notification, and the market open/close hours.                       #
 # NOTE: Sometimes tradingview updates/moves/changes the way fields of the  #
-# page are located, so updating the xpath is necessary in those instances. #
+# page are located, so updating the css selectors and xpaths is necessary. #
 #--------------------------------------------------------------------------#
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
@@ -78,8 +78,8 @@ SOUND = "swiftly.wav"
 OS = system()
 MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
-MARKET_OPEN = dt.now().replace(hour = 8, minute = 30)
-MARKET_CLOSE = dt.now().replace(hour = 15, minute = 0)
+MARKET_OPEN = dt.now().replace(hour = int(os.getenv('OPEN_HR')), minute = 30)
+MARKET_CLOSE = dt.now().replace(hour = int(os.getenv('CLOSE_HR')), minute = 0)
 
 #-------------------------------------------------------------#
 # Searches for a stock of interest in the list and gets it    #
