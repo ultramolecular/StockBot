@@ -6,21 +6,26 @@
 # calculate and store their prices and percent changes, and send notifications given the  #
 # desired change from the user. It is in constant development, and is sometimes unstable. #
 #-----------------------------------------------------------------------------------------#
+from dotenv import load_dotenv
+from datetime import datetime as dt
+import os
+from pathlib import Path
+from platform import system
+from time import sleep
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from time import sleep
 from stock import Stock
-from datetime import datetime as dt
-from platform import system
 
 ''' TODO: 
 
     LEGEND: [1] - highest priority [2] - next priority [3] - last priority
 
-    - [1] Have different gainers list, absolute gainers (entire day), 1m gainers, 5m gainers, 10m gainers, etc
+    - [2] Have different gainers list, absolute gainers (entire day), 1m gainers, 5m gainers, 10m gainers, etc
 
     - [3] Try to have the notifications be in a different color, also the percent changes whether they're
       positive (green) or negative (red)
@@ -39,9 +44,11 @@ from platform import system
 #----------------------------------------------------------------------------#
 #DRIV_LOC = "/usr/bin/chromedriver"
 #BIN_LOC = "/usr/share/google-chrome"
+env_path = Path('.') / '.env'
+load_dotenv(dotenv_path= env_path)
 options = webdriver.ChromeOptions()
 # For Windows, this will disable the extraneous warnings displayed.
-#options.add_experimental_option('excludeSwitches', ['enable-logging'])
+# options.add_experimental_option('excludeSwitches', ['enable-logging'])
 # options.headless = True
 # options.add_argument("window-size=1920x1080")
 #options.binary_location = BIN_LOC
@@ -56,16 +63,17 @@ driv.set_window_size(1080, 1044)
 # NOTE: Sometimes tradingview updates/moves/changes the way fields of the  #
 # page are located, so updating the xpath is necessary in those instances. #
 #--------------------------------------------------------------------------#
-STOCK_PATH = "//a[@class='tv-screener__symbol apply-common-tooltip']"
-STOCK_PRICES_PATH = "//td[@class='tv-data-table__cell tv-screener-table__cell tv-screener-table__cell--big tv-screener-table__cell--with-marker']"
-MAIN_LOGIN_PATH = "/html/body/div[2]/div[3]/div/div[4]/span[2]/a"
-LOGIN_PATH = "/html/body/div[9]/div/div[2]/div/div/div/div/div/div/form/div[5]/div[2]/button/span[2]"
-EMAIL_PATH = "/html/body/div[9]/div/div[2]/div/div/div/div/div/div/div[1]/div[4]/div/span"
-CRED_BOX = "//input[@class='tv-control-material-input tv-signin-dialog__input tv-control-material-input__control']"
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
-EMAIL = ""
-PASS = ""
+STOCK_LIST_CSS = "tr[class*='listRow']"
+STOCK_CSS = "td:nth-child(1) a"
+STOCK_PRICES_CSS = "td:nth-child(3)"
+LOGIN_ICON_CSS = "button[aria-label='Open user menu']"
+EMAIL_CSS = ".emailButton-nKAw8Hvt"
+CREDS_IDS = ("id_username", "id_password")
+LOGIN_BUTTON_CSS = ".submitButton-LQwxK8Bm"
+EMAIL = os.getenv('EMAIL')
+PASS = os.getenv('PASS')
 SOUND = "swiftly.wav"
 OS = system()
 MARKET_MONDAY = 0
@@ -116,21 +124,51 @@ def play(file, osType):
         playsound(file)
 
 # CONTINUE PROGRAM IF IT IS DURING MARKET DAY & HOURS, OR BYPASS FOR DEVELOPMENT.
-if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:    
+if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:
     print("Market: OPEN\n")
     refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
     pctChgDes = float(input(r"Enter percent change desired (y% format): "))
     pctChgAfter = float(input("Enter percent change desired after it has met initial desired change: "))
     # Once we get info from user, go to tradingview home site.
     driv.get(URL)
+    # Create instace of ActionChains to be able to perform keyboard actions
+    actions = ActionChains(driv)
     # Wait for login button to click, then send credentials and log in.
-    WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.XPATH, MAIN_LOGIN_PATH))).click()
-    WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.XPATH, EMAIL_PATH))).click()
-    creds = driv.find_elements_by_xpath(CRED_BOX)
-    creds[0].send_keys(EMAIL)
-    creds[1].send_keys(PASS)
-    driv.find_element_by_xpath(LOGIN_PATH).click() 
+    login_icon = WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_ICON_CSS)))
+    login_icon.click()
+    # Focus the action chains to the sign in icon and press down arrow and enter to go to sign in display
+    actions.move_to_element(login_icon).perform()
+    actions.send_keys(Keys.ARROW_DOWN).send_keys(Keys.RETURN).perform()
+    WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, EMAIL_CSS))).click()
+    WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[0]))).send_keys(EMAIL)
     sleep(.5)
+    WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[1]))).send_keys(PASS)
+    sleep(.5)    
+    WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
+    # Wait for reCAPTCHA iframe to appear
+    try:
+        recaptcha_iframe = WebDriverWait(driv, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//iframe[@title='reCAPTCHA']"))
+        )
+        print('-' * 200, "\nreCAPTCHA detected, please solve to continue!")
+    except TimeoutException:
+        print("No reCAPTCHA detected. Continuing...")
+        recaptcha_iframe = None
+
+    if recaptcha_iframe:
+        # Wait until the 'g-recaptcha-response' element has a non-empty value
+        try:
+            WebDriverWait(driv, 300).until(
+                lambda driver: driver.execute_script("return document.getElementsByName('g-recaptcha-response')[0].value !== '';")
+            )
+            print("reCAPTCHA solved! Continuing...")
+        except TimeoutException:
+            print("Timeout waiting for reCAPTCHA to be solved.")
+            driv.quit()
+        finally:
+            WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
+    # NOTE: this sleep is crucial for making sure the user is signed in... for some reason
+    sleep(2)
     # Once we're logged in, go to top gainer stock page.
     driv.get(GAINS_URL)
     # This will be the main list that will hold the stocks for the program.
@@ -138,15 +176,21 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
 
     # Begins our main loop, where we wait refresh rate and only continue if we still in market hours.
     while dt.now() < MARKET_CLOSE:
+        # Wait for the table to load
+        WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, "table")))
         # Grab a list of the stock elements (stock names & prices listed on tradingview).
-        stockElems, stockPriceElems = driv.find_elements_by_xpath(STOCK_PATH), driv.find_elements_by_xpath(STOCK_PRICES_PATH)
+        stockElems = driv.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
         # Create list of stocks and a list of their respective prices.
-        stockNames, stockPrices = [s.text for s in stockElems], []
-        # For the prices, as of right now it is getting the other stats as well, so every other 6th is the correct element.
-        i = 0
-        while i < len(stockPriceElems):
-            stockPrices.append(float(stockPriceElems[i].text))
-            i += 6
+        stockNames, stockPrices = [], []
+        for stk in stockElems:
+            try:
+                tick = stk.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
+                price = float(stk.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS).text.strip().split()[0])
+                stockNames.append(tick)
+                stockPrices.append(price)
+            except ValueError as e:
+                print(f'Something went wrong with stock extraction: {e}')
+
         # Flag to let program know whether to sort gainers list or not.
         changed = False
 
