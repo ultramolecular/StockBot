@@ -56,7 +56,7 @@ class Stock:
     #     price (float): current price of the stock.               #
     #--------------------------------------------------------------#
     def setNewAfter(self, newPrice):
-        self.pctChgAfter = (newPrice - self.basePrice / self.basePrice) * 100 if self.metCrit else 0
+        self.pctChgAfter = ((newPrice - self.basePrice) / self.basePrice) * 100 if self.metCrit else 0
 
     #--------------------------------------------#
     # Returns the relative pct chg of the stock. #
