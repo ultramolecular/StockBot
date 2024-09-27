@@ -47,7 +47,7 @@ class Stock:
     #     (float): the new absolute pct chg of stock.               #
     #-------------------------------------------------------------- #
     def getNewAbs(self, price):
-        return (price - self.OG_PRICE / self.OG_PRICE) * 100
+        return ((price - self.OG_PRICE) / self.OG_PRICE) * 100
 
     #--------------------------------------------------------------#
     # Sets the new relative pct chg to a new updated percentage if #
