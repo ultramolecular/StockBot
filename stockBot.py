@@ -47,8 +47,10 @@ from stock import Stock
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path= env_path)
 options = webdriver.ChromeOptions()
+OS = system()
 # NOTE: For Windows, this will disable the extraneous warnings displayed.
-# options.add_experimental_option('excludeSwitches', ['enable-logging'])
+if OS == "Windows":
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
 # options.headless = True
 # options.add_argument("window-size=1920x1080")
 #options.binary_location = BIN_LOC
@@ -75,7 +77,6 @@ LOGIN_BUTTON_CSS = ".submitButton-LQwxK8Bm"
 EMAIL = os.getenv('EMAIL')
 PASS = os.getenv('PASS')
 SOUND = "swiftly.wav"
-OS = system()
 MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
 MARKET_OPEN = dt.now().replace(hour = int(os.getenv('OPEN_HR')), minute = 30)
