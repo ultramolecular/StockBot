@@ -91,7 +91,7 @@ MARKET_CLOSE = dt.now().replace(hour = int(os.getenv('CLOSE_HR')), minute = 0)
 #     stock (Stock): the stock of interest if it exists.      #
 #     None (null): None/null if it does not exist.            #
 #-------------------------------------------------------------#
-def inGainers(gainers, filt):
+def in_gainers(gainers, filt):
     for stock in gainers:
        if filt(stock):
            return stock
@@ -102,7 +102,7 @@ def inGainers(gainers, filt):
 # Args:                                #
 #     gainers (list): list of gainers. #
 #--------------------------------------#
-def showTop5(gainers):
+def show_top_5(gainers):
     if len(gainers) > 0:
         print("-" * 200, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
         for g in range(5):
@@ -122,6 +122,20 @@ def play(file, osType):
     else:
         from playsound import playsound
         playsound(file)
+
+def is_recaptcha_visible(driver):
+    return driver.execute_script("""
+        var iframe = document.querySelector("iframe[title='reCAPTCHA']");
+        if (iframe) {
+            var style = window.getComputedStyle(iframe);
+            var display = style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+            var rect = iframe.getBoundingClientRect();
+            var inViewport = rect.width > 0 && rect.height > 0;
+            return display && inViewport;
+        } else {
+            return false;
+        }
+    """)
 
 # CONTINUE PROGRAM IF IT IS DURING MARKET DAY & HOURS, OR BYPASS FOR DEVELOPMENT.
 if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:
@@ -145,20 +159,14 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
     WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[1]))).send_keys(PASS)
     sleep(.5)    
     WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
-    # Wait for reCAPTCHA iframe to appear
-    try:
-        recaptcha_iframe = WebDriverWait(driv, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//iframe[@title='reCAPTCHA']"))
-        )
-        print('-' * 200, "\nreCAPTCHA detected, please solve to continue!")
-    except TimeoutException:
-        print("No reCAPTCHA detected. Continuing...")
-        recaptcha_iframe = None
 
-    if recaptcha_iframe:
+    # Check if reCAPTCHA is visible
+    try:
+        WebDriverWait(driv, 5).until(lambda driver: is_recaptcha_visible(driver))
+        print('-' * 200, "\nreCAPTCHA detected, please solve to continue!")
         # Wait until the 'g-recaptcha-response' element has a non-empty value
         try:
-            WebDriverWait(driv, 300).until(
+            WebDriverWait(driv, 40).until(
                 lambda driver: driver.execute_script("return document.getElementsByName('g-recaptcha-response')[0].value !== '';")
             )
             print("reCAPTCHA solved! Continuing...")
@@ -166,9 +174,11 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
             print("Timeout waiting for reCAPTCHA to be solved.")
             driv.quit()
         finally:
+            # Attempt to click login button again
             WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
-    # NOTE: this sleep is crucial for making sure the user is signed in... for some reason
-    sleep(2)
+    except TimeoutException:
+        print("No reCAPTCHA detected. Continuing...")
+
     # Once we're logged in, go to top gainer stock page.
     driv.get(GAINS_URL)
     # This will be the main list that will hold the stocks for the program.
@@ -196,7 +206,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
 
         # Go through each newly fetched stocks and if they are in our gainers list, update, if not add them.
         for stock, price in zip(stockNames, stockPrices):
-            stk = inGainers(gainers, lambda s: s.TICKER == stock)
+            stk = in_gainers(gainers, lambda s: s.TICKER == stock)
             if stk is not None:
                 # Calculate each stock's absolute percent change and it if has met criteria, it's relative percent change.
                 newAbsPctChg = stk.getNewAbs(price)
@@ -227,7 +237,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
         # If the list changed, sort list from highest gainers to lowest gainers.
         if changed:
             gainers.sort(key = lambda s: s.absPctChg, reverse = True)
-        showTop5(gainers)
+        show_top_5(gainers)
         # Wait the desired refresh rate if the list has changed, or refresh after 10 seconds if not.
         sleep(refRateDes if changed else 10)
         driv.refresh()
