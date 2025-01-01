@@ -21,20 +21,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from stock import Stock
 
-''' TODO: 
-
-    LEGEND: [1] - highest priority [2] - next priority [3] - last priority
-
-    - [2] Have different gainers list, absolute gainers (entire day), 1m gainers, 5m gainers, 10m gainers, etc
-
-    - [3] Try to have the notifications be in a different color, also the percent changes whether they're
-      positive (green) or negative (red)
-
-    - [3] Figure out some way for the program to run on itself and know when to
-      start processing data.
-
-    - [3] Make an easy and visually appealing gui for users.
-'''
 
 #----------------------------------------------------------------------------#
 # All things chromedriver - set your chromedriver and google chrome binary   #
@@ -139,7 +125,8 @@ def is_recaptcha_visible(driver):
     """)
 
 # CONTINUE PROGRAM IF IT IS DURING MARKET DAY & HOURS, OR BYPASS FOR DEVELOPMENT.
-if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() > MARKET_OPEN and dt.now() < MARKET_CLOSE:
+# TODO: Figure out if adding <= and >= to this condition fixes program start bug
+if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE:
     print("Market: OPEN\n")
     refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
     pctChgDes = float(input(r"Enter percent change desired (y% format): "))
@@ -238,7 +225,8 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
         # If the list changed, sort list from highest gainers to lowest gainers.
         if changed:
             gainers.sort(key = lambda s: s.absPctChg, reverse = True)
-        show_top_5(gainers)
+            # TODO: figure out if putting this under this if statement fixes showing when gainers don't change
+            show_top_5(gainers)
         # Wait the desired refresh rate if the list has changed, or refresh after 10 seconds if not.
         sleep(refRateDes if changed else 10)
         driv.refresh()
