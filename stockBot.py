@@ -22,40 +22,24 @@ from selenium.webdriver.common.keys import Keys
 from stock import Stock
 
 
-#----------------------------------------------------------------------------#
-# All things chromedriver - set your chromedriver and google chrome binary   #
-# locations here, as well as the driver options, which if you don't want to  #
-# do headless you can comment that out.                                      #
-# NOTE: Setting driver and binary location is not necessary for some users.  #
-#----------------------------------------------------------------------------#
-#DRIV_LOC = "/usr/bin/chromedriver"
-#BIN_LOC = "/usr/share/google-chrome"
+# Configure Chrome and OS path variables
 env_path = Path('.') / '.env'
-load_dotenv(dotenv_path= env_path)
-options = webdriver.ChromeOptions()
+load_dotenv(dotenv_path=env_path)
 OS = system()
-# NOTE: For Windows, this will disable the extraneous warnings displayed.
+
+options = webdriver.ChromeOptions()
 if OS == "Windows":
     options.add_experimental_option('excludeSwitches', ['enable-logging'])
-# options.headless = True
-# options.add_argument("window-size=1920x1080")
-#options.binary_location = BIN_LOC
-driv = webdriver.Chrome(options = options)
-# Uncomment if you are not doing headless.
+driv = webdriver.Chrome(options=options)
 driv.set_window_size(1080, 1044)
 
-#--------------------------------------------------------------------------#
-# All program constants are declared here - stock ticker and price paths,  #
-# login paths, tradingview.com urls and credentials, the sound file        #
-# for notification, and the market open/close hours.                       #
-# NOTE: Sometimes tradingview updates/moves/changes the way fields of the  #
-# page are located, so updating the css selectors and xpaths is necessary. #
-#--------------------------------------------------------------------------#
+# Program constants
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
 STOCK_LIST_CSS = "tr[class*='listRow']"
 STOCK_CSS = "td:nth-child(1) a"
 STOCK_PRICES_CSS = "td:nth-child(3)"
+VOL_CSS = "td:nth-child(4)"
 LOGIN_ICON_CSS = "button[aria-label='Open user menu']"
 EMAIL_CSS = ".emailButton-nKAw8Hvt"
 CREDS_IDS = ("id_username", "id_password")
@@ -65,44 +49,58 @@ PASS = os.getenv('PASS')
 SOUND = "swiftly.wav"
 MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
-MARKET_OPEN = dt.now().replace(hour = int(os.getenv('OPEN_HR')), minute = 30)
-MARKET_CLOSE = dt.now().replace(hour = int(os.getenv('CLOSE_HR')), minute = 0)
+OPEN_HR = int(os.getenv('OPEN_HR'))
+CLOSE_HR = int(os.getenv('CLOSE_HR'))
+MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30)
+MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0)
 
-#-------------------------------------------------------------#
-# Searches for a stock of interest in the list and gets it    #
-# back to user if it exists.                                  #
-# Args:                                                       #
-#     gainers (list): the list that contains the gainers.     # 
-#     filt (lambda): the filter which will be the ticker.     #
-# Returns:                                                    #
-#     stock (Stock): the stock of interest if it exists.      #
-#     None (null): None/null if it does not exist.            #
-#-------------------------------------------------------------#
-def in_gainers(gainers, filt):
-    for stock in gainers:
-       if filt(stock):
-           return stock
-    return None
 
-#--------------------------------------#
-# Displays current top 5 gainers.      #
-# Args:                                #
-#     gainers (list): list of gainers. #
-#--------------------------------------#
-def show_top_5(gainers):
-    if len(gainers) > 0:
-        print("-" * 200, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
-        for g in range(5):
-            print(gainers[g])
+def parse_volume_text(volume_str):
+    """
+    Parse a volume string like '135.26 M', or '5.3 K'and return an integer.
+    """
+    volume_str = volume_str.replace(" ", "")
+    if not volume_str:
+        return 0
+
+    multiplier = 1
+    if volume_str.endswith('M'):
+        multiplier = 1_000_000
+        volume_str = volume_str[:-1]
+    elif volume_str.endswith('K'):
+        multiplier = 1_000
+        volume_str = volume_str[:-1]
+
+    try:
+        base_val = float(volume_str)
+    except ValueError:
+        base_val = 0.0
     
-#---------------------------------------------------------#
-# Play sound based on OS and given sound file path.       #
-# Uses winsound if on Windows, playsound if MacOS/Linux.  #
-# Args:                                                   #
-#     file (str): sound file path.                        #
-#     osType (str): platform/os of the user.              #
-#---------------------------------------------------------#
+    return int(base_val * multiplier)
+
+def show_top_5(gainers):
+    """
+    Displays current top 5 gainers, and if a stock has met user criteria,
+    prints an additional line with (critTime, critPrice, ticker, timeMaxPrice,
+                                    maxPrice, peakAbsPctChg, volumeAtMaxPrice).
+    """
+    if len(gainers) == 0:
+        return
+    print("-" * 200, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
+    top5 = gainers[:5]
+    for s in top5:
+        print(s)
+        if s.hasMetCrit():
+            # Build the second line if stock already passed criteria
+            critTimeStr = s.critTime if s.critTime else "N/A"
+            timeMaxStr = s.timeMaxPrice if s.timeMaxPrice else "N/A"
+            peakChange = s.getPeakChange()  # absolute % from OG_PRICE
+            msg = f"{critTimeStr} ${s.critPrice:.2f}  {s.TICKER}   {timeMaxStr}  " + \
+                    f"${s.maxPrice:.2f} {peakChange:.2f}% {s.volumeAtMaxPrice}"
+            print(msg)
+
 def play(file, osType):
+    """Play sound based on OS and given sound file path."""
     if osType == "Windows":
         import winsound
         winsound.PlaySound(file, winsound.SND_ASYNC)
@@ -111,6 +109,7 @@ def play(file, osType):
         playsound(file)
 
 def is_recaptcha_visible(driver):
+    """Detects recaptcha iframe visibility and returns true if visible, false if not."""
     return driver.execute_script("""
         var iframe = document.querySelector("iframe[title='reCAPTCHA']");
         if (iframe) {
@@ -124,35 +123,42 @@ def is_recaptcha_visible(driver):
         }
     """)
 
-# CONTINUE PROGRAM IF IT IS DURING MARKET DAY & HOURS, OR BYPASS FOR DEVELOPMENT.
-# TODO: Figure out if adding <= and >= to this condition fixes program start bug
-if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY and dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE:
+def in_gainers(gainers, filt):
+    """Searches for a stock of interest in the list and returns it if it exists."""
+    for stock in gainers:
+       if filt(stock):
+           return stock
+    return None
+
+
+# Check if current time is within market hours
+if (dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY
+    and dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE):
     print("Market: OPEN\n")
     refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
     pctChgDes = float(input(r"Enter percent change desired (y% format): "))
     pctChgAfter = float(input("Enter percent change desired after it has met initial desired change: "))
-    # Once we get info from user, go to tradingview home site.
+
+    # Go to TradingView
     driv.get(URL)
-    # Create instace of ActionChains to be able to perform keyboard actions
     actions = ActionChains(driv)
-    # Wait for login button to click, then send credentials and log in.
+
+    # Login
     login_icon = WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_ICON_CSS)))
     login_icon.click()
-    # Focus the action chains to the sign in icon and press down arrow and enter to go to sign in display
     actions.move_to_element(login_icon).perform()
     actions.send_keys(Keys.ARROW_DOWN).send_keys(Keys.RETURN).perform()
     WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, EMAIL_CSS))).click()
     WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[0]))).send_keys(EMAIL)
     sleep(.5)
     WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[1]))).send_keys(PASS)
-    sleep(.5)    
+    sleep(.5)
     WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
 
-    # Check if reCAPTCHA is visible
+    # Check reCAPTCHA
     try:
         WebDriverWait(driv, 5).until(lambda driver: is_recaptcha_visible(driver))
         print('-' * 200, "\nreCAPTCHA detected, please solve to continue!")
-        # Wait until the 'g-recaptcha-response' element has a non-empty value
         try:
             WebDriverWait(driv, 40).until(
                 lambda driver: driver.execute_script("return document.getElementsByName('g-recaptcha-response')[0].value !== '';")
@@ -162,78 +168,100 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY a
             print("Timeout waiting for reCAPTCHA to be solved.")
             driv.quit()
         finally:
-            # Attempt to click login button again
             WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
     except TimeoutException:
         print("No reCAPTCHA detected. Continuing...")
 
-    # Once we're logged in, go to top gainer stock page.
+    # Go to Gainers page
     driv.get(GAINS_URL)
-    # This will be the main list that will hold the stocks for the program.
+
+    # Main list holding the stocks
     gainers = []
 
-    # Begins our main loop, where we wait refresh rate and only continue if we still in market hours.
+    # Main program loop where we wait refresh rate and only continue if we are still in market hours
     while dt.now() < MARKET_CLOSE:
-        # Wait for the table to load
+        # Wait for table
         WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, "table")))
-        # Grab a list of the stock elements (stock names & prices listed on tradingview).
+        # Grab rows
         stockElems = driv.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
-        # Create list of stocks and a list of their respective prices.
-        stockNames, stockPrices = [], []
-        for stk in stockElems:
+        stockNames, stockPrices, volumes = [], [], []
+
+        for row in stockElems:
             try:
-                tick = stk.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
-                price = float(stk.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS).text.strip().split()[0])
+                tick = row.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
+                price_text = row.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS).text.strip().split()[0]
+                price = float(price_text)
+                vol_text = row.find_element(By.CSS_SELECTOR, VOL_CSS).text.strip()
+                volume_val = parse_volume_text(vol_text)
+
                 stockNames.append(tick)
                 stockPrices.append(price)
+                volumes.append(volume_val)
             except ValueError as e:
-                print(f'Something went wrong with stock extraction: {e}')
+                print(f'Something went wrong with extraction: {e}')
 
-        # Flag to let program know whether to sort gainers list or not.
         changed = False
 
-        # Go through each newly fetched stocks and if they are in our gainers list, update, if not add them.
-        for stock, price in zip(stockNames, stockPrices):
-            stk = in_gainers(gainers, lambda s: s.TICKER == stock)
+        # Update each stock or create new
+        for (stockName, price, vol) in zip(stockNames, stockPrices, volumes):
+            stk = in_gainers(gainers, lambda s: s.TICKER == stockName)
             if stk is not None:
-                # Calculate each stock's absolute percent change and it if has met criteria, it's relative percent change.
+                # Calculate absolute % chg
                 newAbsPctChg = stk.getNewAbs(price)
                 stk.setNewAfter(price)
-                # Update the 1m, 5m, 10m, 20m intervals.
                 stk.updateIntervals(price, dt.now())
-                # Only update its pct chg and price if it changed...
+
+                # Only update its % chg and price if it changed...
                 if newAbsPctChg != stk.getAbs():
                     changed = True
                     stk.setAbs(newAbsPctChg)
                     stk.setPrice(price)
-                # If current stock's percent change meets desired and it has already not met the desired...
+
+                # If meets desired and wasn't met before
                 if stk.getAbs() >= pctChgDes and not stk.hasMetCrit():
-                    # Send notification, flag it as met, and set base price as this price.
                     print(f"\n{stk.TICKER} grew by {stk.getAbs():.2f}% in top gainers! Check it out!")
                     stk.didMeetCrit()
                     stk.setBasePrice(price)
                     play(SOUND, OS)
-                # If current stock has already met desired pct chg, then check if it met the desired chg for after.
+
+                # If already met criteria, check if after-criteria growth is reached
                 elif stk.hasMetCrit() and stk.getAfter() >= pctChgAfter:
                     print(f"\n{stk.getTicker()} grew by {stk.getAfter():.2f}% even after it grew by {pctChgDes}%! Check it out!")
                     stk.setBasePrice(price)
                     play(SOUND, OS)
+
+                # Update the stock’s max price / volume if new price is higher
+                if stk.hasMetCrit() and price > stk.maxPrice:
+                    stk.maxPrice = price
+                    stk.timeMaxPrice = dt.now()
+                    stk.volumeAtMaxPrice = vol
+
             else:
-                gainers.append(Stock(stock, price, dt.now()))
+                # Create new stock object
+                newStock = Stock(stockName, price, dt.now())
+                gainers.append(newStock)
                 changed = True
 
-        # If the list changed, sort list from highest gainers to lowest gainers.
+        # Sort list from highest gainers to lowest and show top 5 if list is changed
         if changed:
-            gainers.sort(key = lambda s: s.absPctChg, reverse = True)
-            # TODO: figure out if putting this under this if statement fixes showing when gainers don't change
+            gainers.sort(key=lambda s: s.absPctChg, reverse=True)
             show_top_5(gainers)
-        # Wait the desired refresh rate if the list has changed, or refresh after 10 seconds if not.
+
+        # Sleep
         sleep(refRateDes if changed else 10)
         driv.refresh()
-        # Wait for a second as a buffer to the data scraping.
         sleep(1)
 
+    # End-of-day summary
     print("\nMarket closed now, come back next market day!\n")
+    print("SUMMARY OF STOCKS THAT MET CRITERIA TODAY:")
+    print("-"*120)
+    for s in gainers:
+        if s.hasMetCrit():
+            critTimeStr = s.critTime if s.critTime else "N/A"
+            timeMaxStr = s.timeMaxPrice if s.timeMaxPrice else "N/A"
+            peakChange = s.getPeakChange()
+            print(f"{critTimeStr}\t${s.critPrice:.2f}\t{s.TICKER}\t{timeMaxStr}\t${s.maxPrice:.2f}\t{peakChange:.2f}%\t{s.volumeAtMaxPrice}")
 else:
     print("\nMarket: CLOSED, return next market day!\n")
 
