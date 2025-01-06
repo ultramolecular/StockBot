@@ -8,7 +8,7 @@
 #-------------------------------------------------------------------------------------------------------#
 
 class Stock:
-    def __init__(self, ticker, price, currTime):
+    def __init__(self, ticker, price, vol, currTime):
         self.TICKER = ticker
         self.price = price
         self.basePrice = price
@@ -27,7 +27,7 @@ class Stock:
         self.critPrice = None
         self.maxPrice = price
         self.timeMaxPrice = None
-        self.volumeAtMaxPrice = 0
+        self.volumeAtMaxPrice = vol
 
     def getTicker(self):
         return self.TICKER
@@ -53,7 +53,10 @@ class Stock:
         return self.metCrit
 
     def didMeetCrit(self):
-        """Flags that the stock has met user criteria, and records the time/price if not already set."""
+        """
+        Flags that the stock has met user criteria, and records the time/price
+        if not already set.
+        """
         self.metCrit = True
         # Only record the first time we met criteria
         if self.critTime is None:
@@ -70,10 +73,41 @@ class Stock:
     def setBasePrice(self, newPrice):
         self.basePrice = newPrice
 
-    def updateIntervals(self, price, currTime):
+    def setMaxPrice(self, newMaxPrice):
+        self.maxPrice = newMaxPrice
+
+    def setTimeMaxPrice(self, newTimeMaxPrice):
+        self.timeMaxPrice = newTimeMaxPrice
+
+    def setVolAtMaxPrice(self, newVolAtMax):
+        self.volumeAtMaxPrice = newVolAtMax
+
+    def getMaxPrice(self):
+        return self.maxPrice
+
+    def getTimeMaxPrice(self):
+        return self.timeMaxPrice
+
+    def getVolAtMaxPrice(self):
+        return self.volumeAtMaxPrice
+
+    def getCritTime(self):
+        return self.critTime
+
+    def getCritPrice(self):
+        return self.critPrice
+
+    def getPeakChange(self):
         """
-        Update the 1m, 5m, 10m, 20m intervals, as well as age of the stock.
-        Called from the main loop in stockBot.
+        Compute how much the maxPrice is, in percent change, relative to the
+        price when stock hit criteria (critPrice).
+        """
+        return ((self.maxPrice - self.critPrice) / self.critPrice) * 100
+
+    def updateIntervals(self, price, vol, currTime):
+        """
+        Update the 1m, 5m, 10m, 20m intervals, age of the stock, as well as criteria
+        stats once stock has met criteria. Called from the main loop in stockBot.py.
         """
         self.age = (currTime - self.TIME_ENTERED).seconds // 60
         self.pastPrices.append(price)
@@ -104,15 +138,8 @@ class Stock:
         # If we've already met criteria, see if price is a new maximum
         if self.metCrit and price > self.maxPrice:
             self.maxPrice = price
-            self.timeMaxPrice = currTime
-            # volumeAtMaxPrice updated in main script after we parse volume
-
-    def getPeakChange(self):
-        """
-        Compute how much the maxPrice is, in percent change, relative to
-        the original price (OG_PRICE) from market open time.
-        """
-        return ((self.maxPrice - self.OG_PRICE) / self.OG_PRICE) * 100
+            self.timeMaxPrice = currTime 
+            self.volumeAtMaxPrice = vol
 
     def __str__(self):
         """

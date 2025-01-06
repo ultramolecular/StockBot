@@ -51,52 +51,32 @@ MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
 OPEN_HR = int(os.getenv('OPEN_HR'))
 CLOSE_HR = int(os.getenv('CLOSE_HR'))
-MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30)
-MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0)
+MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30, second=0)
+MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
-
-def parse_volume_text(volume_str):
-    """
-    Parse a volume string like '135.26 M', or '5.3 K'and return an integer.
-    """
-    volume_str = volume_str.replace(" ", "")
-    if not volume_str:
-        return 0
-
-    multiplier = 1
-    if volume_str.endswith('M'):
-        multiplier = 1_000_000
-        volume_str = volume_str[:-1]
-    elif volume_str.endswith('K'):
-        multiplier = 1_000
-        volume_str = volume_str[:-1]
-
-    try:
-        base_val = float(volume_str)
-    except ValueError:
-        base_val = 0.0
-    
-    return int(base_val * multiplier)
 
 def show_top_5(gainers):
     """
     Displays current top 5 gainers, and if a stock has met user criteria,
-    prints an additional line with (critTime, critPrice, ticker, timeMaxPrice,
+    prints an additional line with (critTime, critPrice, timeMaxPrice,
                                     maxPrice, peakAbsPctChg, volumeAtMaxPrice).
     """
     if len(gainers) == 0:
         return
-    print("-" * 200, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
-    top5 = gainers[:5]
-    for s in top5:
+    print("-" * 120, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
+    for g in range(5):
+        s = gainers[g]
         print(s)
         if s.hasMetCrit():
             # Build the second line if stock already passed criteria
-            critTimeStr = s.critTime if s.critTime else "N/A"
-            timeMaxStr = s.timeMaxPrice if s.timeMaxPrice else "N/A"
-            peakChange = s.getPeakChange()  # absolute % from OG_PRICE
-            msg = f"{critTimeStr} ${s.critPrice:.2f}  {s.TICKER}   {timeMaxStr}  " + \
-                    f"${s.maxPrice:.2f} {peakChange:.2f}% {s.volumeAtMaxPrice}"
+            critTimeStr = s.getCritTime().strftime('%H:%M:%S')
+            timeMaxStr = s.getTimeMaxPrice().strftime('%H:%M:%S')
+            mxPr = s.getMaxPrice()
+            critPr = s.getCritPrice()
+            volMax = s.getVolAtMaxPrice()
+            peakChange = s.getPeakChange()  # absolute % from price when hit criteria
+            msg = f"\t{critTimeStr}\t${critPr:.2f}\t{timeMaxStr}\t" + \
+                    f"${mxPr:.2f}\t{volMax}\t{peakChange:.2f}%"
             print(msg)
 
 def play(file, osType):
@@ -131,126 +111,125 @@ def in_gainers(gainers, filt):
     return None
 
 
-# Check if current time is within market hours
-if (dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY
-    and dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE):
-    print("Market: OPEN\n")
-    refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
-    pctChgDes = float(input(r"Enter percent change desired (y% format): "))
-    pctChgAfter = float(input("Enter percent change desired after it has met initial desired change: "))
+# Check if current day is within market week
+if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
+    # If user started program before market open time, wait until open
+    if dt.now() < MARKET_OPEN:
+        print(f"Market isn't open just yet, waiting until open @ {MARKET_OPEN.strftime('%H:%M:%S')}...")
+        while dt.now() < MARKET_OPEN:
+            pass
+    # Once we're within market hours, begin program specification set up and navigation
+    if dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE:
+        print("Market: OPEN\n")
+        refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
+        pctChgDes = float(input(r"Enter percent change desired (y% format): "))
+        pctChgAfter = float(input("Enter percent change desired after it has met initial desired change: "))
 
-    # Go to TradingView
-    driv.get(URL)
-    actions = ActionChains(driv)
+        # Go to TradingView
+        driv.get(URL)
+        actions = ActionChains(driv)
 
-    # Login
-    login_icon = WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_ICON_CSS)))
-    login_icon.click()
-    actions.move_to_element(login_icon).perform()
-    actions.send_keys(Keys.ARROW_DOWN).send_keys(Keys.RETURN).perform()
-    WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, EMAIL_CSS))).click()
-    WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[0]))).send_keys(EMAIL)
-    sleep(.5)
-    WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[1]))).send_keys(PASS)
-    sleep(.5)
-    WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
+        # Login
+        login_icon = WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_ICON_CSS)))
+        login_icon.click()
+        actions.move_to_element(login_icon).perform()
+        actions.send_keys(Keys.ARROW_DOWN).send_keys(Keys.RETURN).perform()
+        WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, EMAIL_CSS))).click()
+        WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[0]))).send_keys(EMAIL)
+        sleep(.5)
+        WebDriverWait(driv, 2).until(EC.visibility_of_element_located((By.ID, CREDS_IDS[1]))).send_keys(PASS)
+        sleep(.5)
+        WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
 
-    # Check reCAPTCHA
-    try:
-        WebDriverWait(driv, 5).until(lambda driver: is_recaptcha_visible(driver))
-        print('-' * 200, "\nreCAPTCHA detected, please solve to continue!")
+        # Check for reCAPTCHA
         try:
-            WebDriverWait(driv, 40).until(
-                lambda driver: driver.execute_script("return document.getElementsByName('g-recaptcha-response')[0].value !== '';")
-            )
-            print("reCAPTCHA solved! Continuing...")
-        except TimeoutException:
-            print("Timeout waiting for reCAPTCHA to be solved.")
-            driv.quit()
-        finally:
-            WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
-    except TimeoutException:
-        print("No reCAPTCHA detected. Continuing...")
-
-    # Go to Gainers page
-    driv.get(GAINS_URL)
-
-    # Main list holding the stocks
-    gainers = []
-
-    # Main program loop where we wait refresh rate and only continue if we are still in market hours
-    while dt.now() < MARKET_CLOSE:
-        # Wait for table
-        WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, "table")))
-        # Grab rows
-        stockElems = driv.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
-        stockNames, stockPrices, volumes = [], [], []
-
-        for row in stockElems:
+            WebDriverWait(driv, 4).until(lambda driver: is_recaptcha_visible(driver))
+            print('-' * 200, "\nreCAPTCHA detected, please solve to continue!")
             try:
-                tick = row.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
-                price_text = row.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS).text.strip().split()[0]
-                price = float(price_text)
-                vol_text = row.find_element(By.CSS_SELECTOR, VOL_CSS).text.strip()
-                volume_val = parse_volume_text(vol_text)
+                WebDriverWait(driv, 40).until(
+                    lambda driver: driver.execute_script("return document.getElementsByName('g-recaptcha-response')[0].value !== '';")
+                )
+                print("reCAPTCHA solved! Continuing...")
+                WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_BUTTON_CSS))).click()
+            except TimeoutException:
+                print("Timeout waiting for reCAPTCHA to be solved.")
+                driv.close()
+                driv.quit()
+                exit()
+        except TimeoutException:
+            print("No reCAPTCHA detected. Continuing...")
 
-                stockNames.append(tick)
-                stockPrices.append(price)
-                volumes.append(volume_val)
-            except ValueError as e:
-                print(f'Something went wrong with extraction: {e}')
+        # Go to Gainers page
+        driv.get(GAINS_URL)
 
-        changed = False
+        # Main list holding the stocks
+        gainers = []
 
-        # Update each stock or create new
-        for (stockName, price, vol) in zip(stockNames, stockPrices, volumes):
-            stk = in_gainers(gainers, lambda s: s.TICKER == stockName)
-            if stk is not None:
-                # Calculate absolute % chg
-                newAbsPctChg = stk.getNewAbs(price)
-                stk.setNewAfter(price)
-                stk.updateIntervals(price, dt.now())
+        # Main program loop where we wait refresh rate and only continue if we are still in market hours
+        while dt.now() < MARKET_CLOSE:
+            # Wait for table
+            WebDriverWait(driv, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, "table")))
+            # Grab rows
+            stockElems = driv.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
+            stockNames, stockPrices, volumes = [], [], []
 
-                # Only update its % chg and price if it changed...
-                if newAbsPctChg != stk.getAbs():
+            for row in stockElems:
+                try:
+                    tick = row.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
+                    price_text = row.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS).text.strip().split()[0]
+                    price = float(price_text)
+                    vol_text = row.find_element(By.CSS_SELECTOR, VOL_CSS).text.strip()
+
+                    stockNames.append(tick)
+                    stockPrices.append(price)
+                    volumes.append(vol_text)
+                except ValueError as e:
+                    print(f'Something went wrong with value extraction: {e}')
+
+            changed = False
+
+            # Update each stock or create new
+            for (stockName, price, vol) in zip(stockNames, stockPrices, volumes):
+                stk = in_gainers(gainers, lambda s: s.TICKER == stockName)
+                if stk is not None:
+                    # Calculate absolute % chg
+                    newAbsPctChg = stk.getNewAbs(price)
+                    stk.setNewAfter(price)
+                    stk.updateIntervals(price, vol, dt.now())
+
+                    # Only update its % chg and price if it changed...
+                    if newAbsPctChg != stk.getAbs():
+                        changed = True
+                        stk.setAbs(newAbsPctChg)
+                        stk.setPrice(price)
+
+                    # If meets desired and wasn't met before
+                    if stk.getAbs() >= pctChgDes and not stk.hasMetCrit():
+                        print(f"\n{stk.getTicker()} grew by {stk.getAbs():.2f}% in top gainers! Check it out!")
+                        stk.didMeetCrit()
+                        stk.setBasePrice(price)
+                        play(SOUND, OS)
+
+                    # If already met criteria, check if after-criteria growth is reached
+                    elif stk.hasMetCrit() and stk.getAfter() >= pctChgAfter:
+                        print(f"\n{stk.getTicker()} grew by {stk.getAfter():.2f}% even after hitting your growth rate desired ({pctChgDes}%)!")
+                        stk.setBasePrice(price)
+                        play(SOUND, OS)
+                else:
+                    # Create new stock object
+                    newStock = Stock(stockName, price, vol, dt.now())
+                    gainers.append(newStock)
                     changed = True
-                    stk.setAbs(newAbsPctChg)
-                    stk.setPrice(price)
 
-                # If meets desired and wasn't met before
-                if stk.getAbs() >= pctChgDes and not stk.hasMetCrit():
-                    print(f"\n{stk.TICKER} grew by {stk.getAbs():.2f}% in top gainers! Check it out!")
-                    stk.didMeetCrit()
-                    stk.setBasePrice(price)
-                    play(SOUND, OS)
+            # Sort list from highest gainers to lowest and show top 5 if list is changed
+            if changed:
+                gainers.sort(key=lambda s: s.getAbs(), reverse=True)
+                show_top_5(gainers)
 
-                # If already met criteria, check if after-criteria growth is reached
-                elif stk.hasMetCrit() and stk.getAfter() >= pctChgAfter:
-                    print(f"\n{stk.getTicker()} grew by {stk.getAfter():.2f}% even after it grew by {pctChgDes}%! Check it out!")
-                    stk.setBasePrice(price)
-                    play(SOUND, OS)
-
-                # Update the stock’s max price / volume if new price is higher
-                if stk.hasMetCrit() and price > stk.maxPrice:
-                    stk.maxPrice = price
-                    stk.timeMaxPrice = dt.now()
-                    stk.volumeAtMaxPrice = vol
-
-            else:
-                # Create new stock object
-                newStock = Stock(stockName, price, dt.now())
-                gainers.append(newStock)
-                changed = True
-
-        # Sort list from highest gainers to lowest and show top 5 if list is changed
-        if changed:
-            gainers.sort(key=lambda s: s.absPctChg, reverse=True)
-            show_top_5(gainers)
-
-        # Sleep
-        sleep(refRateDes if changed else 10)
-        driv.refresh()
-        sleep(1)
+            # Sleep
+            sleep(refRateDes if changed else 10)
+            driv.refresh()
+            sleep(1)
 
     # End-of-day summary
     print("\nMarket closed now, come back next market day!\n")
@@ -258,10 +237,11 @@ if (dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY
     print("-"*120)
     for s in gainers:
         if s.hasMetCrit():
-            critTimeStr = s.critTime if s.critTime else "N/A"
-            timeMaxStr = s.timeMaxPrice if s.timeMaxPrice else "N/A"
+            critTime = s.getCritTime().strftime("%H:%M:%S")
+            timeMax = s.getTimeMaxPrice().strftime("%H:%M:%S")
+            volMax = s.getVolAtMaxPrice()
             peakChange = s.getPeakChange()
-            print(f"{critTimeStr}\t${s.critPrice:.2f}\t{s.TICKER}\t{timeMaxStr}\t${s.maxPrice:.2f}\t{peakChange:.2f}%\t{s.volumeAtMaxPrice}")
+            print(f"{critTime}\t${s.getCritPrice():.2f}\t{s.getTicker()}\t{timeMax}\t${s.getMaxPrice():.2f}\t{volMax}\t{peakChange:.2f}%")
 else:
     print("\nMarket: CLOSED, return next market day!\n")
 
