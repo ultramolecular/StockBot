@@ -1,3 +1,4 @@
 playsound
 python-dotenv
 selenium
+rich

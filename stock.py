@@ -104,6 +104,18 @@ class Stock:
         """
         return ((self.maxPrice - self.critPrice) / self.critPrice) * 100
 
+    def get1mPct(self):
+        return self.oneMinPctChg
+
+    def get5mPct(self):
+        return self.fiveMinPctChg
+
+    def get10mPct(self):
+        return self.tenMinPctChg
+
+    def get20mPct(self):
+        return self.twentyMinPctChg
+
     def updateIntervals(self, price, vol, currTime):
         """
         Update the 1m, 5m, 10m, 20m intervals, age of the stock, as well as criteria

@@ -11,6 +11,8 @@ from datetime import datetime as dt
 import os
 from pathlib import Path
 from platform import system
+from rich.console import Console
+from rich.table import Table
 from time import sleep
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -57,27 +59,114 @@ MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
 def show_top_5(gainers):
     """
-    Displays current top 5 gainers, and if a stock has met user criteria,
-    prints an additional line with (critTime, critPrice, timeMaxPrice,
-                                    maxPrice, peakAbsPctChg, volumeAtMaxPrice).
+    Uses Rich to print a table for the top 5 gainers with columns:
+      [Ticker | Price | Abs% | 1m% | 5m% | 10m% | 20m%].
+    If a stock has met user criteria, prints a second row for the 'peak' info.
     """
-    if len(gainers) == 0:
+    if not gainers:
         return
-    print("-" * 120, f"\nTOP 5 GAINERS @ {dt.now().strftime('%H:%M:%S')}:\n")
-    for g in range(5):
-        s = gainers[g]
-        print(s)
-        if s.hasMetCrit():
-            # Build the second line if stock already passed criteria
-            critTimeStr = s.getCritTime().strftime('%H:%M:%S')
-            timeMaxStr = s.getTimeMaxPrice().strftime('%H:%M:%S')
-            mxPr = s.getMaxPrice()
-            critPr = s.getCritPrice()
-            volMax = s.getVolAtMaxPrice()
-            peakChange = s.getPeakChange()  # absolute % from price when hit criteria
-            msg = f"\t{critTimeStr}\t${critPr:.2f}\t{timeMaxStr}\t" + \
-                    f"${mxPr:.2f}\t{volMax}\t{peakChange:.2f}%"
-            print(msg)
+
+    console = Console()
+    top5 = gainers[:5]
+    now_str = dt.now().strftime("%H:%M:%S")
+
+    table = Table(
+        title=f"Top 5 Gainers @ {now_str}",
+        show_header=True,
+        header_style="bold cyan",
+    )
+
+    table.add_column("Ticker", style="bold white")
+    table.add_column("Price", justify="right")
+    table.add_column("Abs", justify="right")
+    table.add_column("1m", justify="right")
+    table.add_column("5m", justify="right")
+    table.add_column("10m", justify="right")
+    table.add_column("20m", justify="right")
+
+    for stk in top5:
+        # Build the primary row for the main data
+        # TODO: colorize each percentage
+        row_cells = [
+            stk.getTicker(),
+            f"${stk.price:.2f}",
+            stk.getAbs(),
+            stk, stk.get1mPct(), 1,
+            stk, stk.get5mPct(), 5,
+            stk, stk.get10mPct(), 10,
+            stk, stk.get20mPct(), 20,
+        ]
+        table.add_row(*row_cells)
+        # If it met criteria, add a second row with the “criteria/peak” info
+        if stk.hasMetCrit():
+            crit_time_str = stk.getCritTime().strftime("%H:%M:%S")
+            time_max_str  = stk.getTimeMaxPrice().strftime("%H:%M:%S")
+            peak_change   = stk.getPeakChange()  # absolute % from critPrice
+
+            # TODO: colorize peak_change in second line
+            second_line = (
+                f"[bold yellow]-> Crit:[/bold yellow] {crit_time_str}, "
+                f"${stk.getCritPrice():.2f} | [bold yellow]Peak:[/bold yellow] {time_max_str}, "
+                f"${stk.getMaxPrice():.2f}, Vol: {stk.getVolAtMaxPrice()} => {peak_change}"
+            )
+            # We'll put that entire info into the first column, leaving the others blank
+            table.add_row(
+                second_line,
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+            )
+    console.print(table)
+
+def show_eod_stats(gainers, pctChgDes):
+    """
+    Prints the end-of-day summary table for all stocks that have met or surpassed pctChgDes.
+    """
+    winners = [s for s in gainers if s.hasMetCrit()]
+
+    if not winners:
+        print("\nNo stocks met or surpassed your desired growth today.")
+        return
+
+    console = Console()
+    table = Table(
+        title=f"SUMMARY OF STOCKS THAT SURPASSED {pctChgDes}% GROWTH TODAY",
+        show_header=True,
+        header_style="bold cyan"
+    )
+
+    table.add_column("CritTime", style="bold white")
+    table.add_column("CritPrice", justify="right")
+    table.add_column("Ticker", justify="left")
+    table.add_column("PeakTime", justify="right")
+    table.add_column("MaxPrice", justify="right")
+    table.add_column("Volume", justify="right")
+    table.add_column("Peak %", justify="right")
+
+    for s in winners:
+        crit_time_str = s.getCritTime().strftime("%H:%M:%S")
+        time_max_str  = s.getTimeMaxPrice().strftime("%H:%M:%S")
+        peak_change   = s.getPeakChange()
+        
+        volume_str = s.getVolAtMaxPrice()
+        # TODO: We want the peak change to be colorized
+        peak_str = peak_change
+        crit_price_str = f"${s.getCritPrice():.2f}"
+        max_price_str  = f"${s.getMaxPrice():.2f}"
+
+        table.add_row(
+            crit_time_str,
+            crit_price_str,
+            s.getTicker(),
+            time_max_str,
+            max_price_str,
+            volume_str,
+            peak_str
+        )
+    console.print(table)
 
 def play(file, osType):
     """Play sound based on OS and given sound file path."""
@@ -232,16 +321,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
             sleep(1)
 
         # End-of-day summary
-        print("\nMarket closed now, come back next market day!\n")
-        print("SUMMARY OF STOCKS THAT MET CRITERIA TODAY:")
-        print("-"*120)
-        for s in gainers:
-            if s.hasMetCrit():
-                critTime = s.getCritTime().strftime("%H:%M:%S")
-                timeMax = s.getTimeMaxPrice().strftime("%H:%M:%S")
-                volMax = s.getVolAtMaxPrice()
-                peakChange = s.getPeakChange()
-                print(f"{critTime}\t${s.getCritPrice():.2f}\t{s.getTicker()}\t{timeMax}\t${s.getMaxPrice():.2f}\t{volMax}\t{peakChange:.2f}%")
+        show_eod_stats(gainers, pctChgDes)
 else:
     print("\nMarket: CLOSED, return next market day!\n")
 
