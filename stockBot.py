@@ -44,13 +44,13 @@ LOGIN_ICON_CSS = "button[aria-label='Open user menu']"
 EMAIL_CSS = ".emailButton-nKAw8Hvt"
 CREDS_IDS = ("id_username", "id_password")
 LOGIN_BUTTON_CSS = ".submitButton-LQwxK8Bm"
-EMAIL = os.getenv('EMAIL')
-PASS = os.getenv('PASS')
+EMAIL = os.getenv('EMAIL', '')
+PASS = os.getenv('PASS', '')
 SOUND = "swiftly.wav"
 MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
-OPEN_HR = int(os.getenv('OPEN_HR'))
-CLOSE_HR = int(os.getenv('CLOSE_HR'))
+OPEN_HR = int(os.getenv('OPEN_HR', ''))
+CLOSE_HR = int(os.getenv('CLOSE_HR', ''))
 MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30, second=0)
 MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
@@ -231,17 +231,17 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
             driv.refresh()
             sleep(1)
 
-    # End-of-day summary
-    print("\nMarket closed now, come back next market day!\n")
-    print("SUMMARY OF STOCKS THAT MET CRITERIA TODAY:")
-    print("-"*120)
-    for s in gainers:
-        if s.hasMetCrit():
-            critTime = s.getCritTime().strftime("%H:%M:%S")
-            timeMax = s.getTimeMaxPrice().strftime("%H:%M:%S")
-            volMax = s.getVolAtMaxPrice()
-            peakChange = s.getPeakChange()
-            print(f"{critTime}\t${s.getCritPrice():.2f}\t{s.getTicker()}\t{timeMax}\t${s.getMaxPrice():.2f}\t{volMax}\t{peakChange:.2f}%")
+        # End-of-day summary
+        print("\nMarket closed now, come back next market day!\n")
+        print("SUMMARY OF STOCKS THAT MET CRITERIA TODAY:")
+        print("-"*120)
+        for s in gainers:
+            if s.hasMetCrit():
+                critTime = s.getCritTime().strftime("%H:%M:%S")
+                timeMax = s.getTimeMaxPrice().strftime("%H:%M:%S")
+                volMax = s.getVolAtMaxPrice()
+                peakChange = s.getPeakChange()
+                print(f"{critTime}\t${s.getCritPrice():.2f}\t{s.getTicker()}\t{timeMax}\t${s.getMaxPrice():.2f}\t{volMax}\t{peakChange:.2f}%")
 else:
     print("\nMarket: CLOSED, return next market day!\n")
 
