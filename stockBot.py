@@ -129,7 +129,7 @@ def show_top_5(gainers):
                 f"${stk.getMaxPrice():.2f}, Vol: {stk.getVolAtMaxPrice()} => {colorize_pct(peak_change)}"
             )
             # We'll put that entire info into the first column, leaving the others blank
-            table.add_row(second_line, "", "", "", "", "")
+            table.add_row(second_line, "", "", "", "", "", "")
     console.print(table)
 
 def show_eod_stats(gainers, pctChgDes):
