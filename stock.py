@@ -49,6 +49,9 @@ class Stock:
     def setAbs(self, newAbs):
         self.absPctChg = newAbs
 
+    def getAge(self):
+        return self.age
+
     def hasMetCrit(self):
         return self.metCrit
 
@@ -72,15 +75,6 @@ class Stock:
 
     def setBasePrice(self, newPrice):
         self.basePrice = newPrice
-
-    def setMaxPrice(self, newMaxPrice):
-        self.maxPrice = newMaxPrice
-
-    def setTimeMaxPrice(self, newTimeMaxPrice):
-        self.timeMaxPrice = newTimeMaxPrice
-
-    def setVolAtMaxPrice(self, newVolAtMax):
-        self.volumeAtMaxPrice = newVolAtMax
 
     def getMaxPrice(self):
         return self.maxPrice
@@ -152,19 +146,3 @@ class Stock:
             self.maxPrice = price
             self.timeMaxPrice = currTime 
             self.volumeAtMaxPrice = vol
-
-    def __str__(self):
-        """
-        Print the stock's main line: TICKER, Price, Abs % change, and interval changes.
-        We'll rely on the main script to optionally print the second line if hasMetCrit().
-        """
-        s = f"{self.TICKER}\t${self.price}\tAbs Pct-Chg: {self.absPctChg:.2f}%"
-        if self.age >= 1:
-            s += f"\t1m Pct-Chg: {self.oneMinPctChg:.2f}%"
-        if self.age >= 5:
-            s += f"\t5m Pct-Chg: {self.fiveMinPctChg:.2f}%"
-        if self.age >= 10:
-            s += f"\t10m Pct-Chg: {self.tenMinPctChg:.2f}%"
-        if self.age >= 20:
-            s += f"\t20m Pct-Chg: {self.twentyMinPctChg:.2f}%"
-        return s

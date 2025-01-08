@@ -57,10 +57,33 @@ MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30, second=0)
 MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
 
+def colorize_pct(val):
+    """
+    Colorizes given percentages using Rich markup e.g. [green]2.53%[/green].
+    Positive = green, Negative = red, Zero = white.
+    """
+    if val > 0:
+        color = "green"
+    elif val < 0:
+        color = "red"
+    else:
+        color = "white"
+    return f"[{color}]{val:6.2f}%[/{color}]"
+
+def safe_pct(stk_age, val, min_age):
+    """
+    Return either a colorized percent if stk.age >= min_age, or '--' otherwise.
+    This avoids displaying intervals that the stock hasn't 'lived' for yet.
+    """
+    if stk_age >= min_age:
+        return colorize_pct(val)
+    else:
+        return "--"
+
 def show_top_5(gainers):
     """
-    Uses Rich to print a table for the top 5 gainers with columns:
-      [Ticker | Price | Abs% | 1m% | 5m% | 10m% | 20m%].
+    Prints a table for the top 5 gainers with columns:
+    [Ticker | Price | Abs% | 1m % | 5m % | 10m % | 20m %].
     If a stock has met user criteria, prints a second row for the 'peak' info.
     """
     if not gainers:
@@ -85,40 +108,28 @@ def show_top_5(gainers):
     table.add_column("20m", justify="right")
 
     for stk in top5:
-        # Build the primary row for the main data
-        # TODO: colorize each percentage
-        row_cells = [
+        # Primary row for the main data
+        table.add_row(
             stk.getTicker(),
             f"${stk.price:.2f}",
-            stk.getAbs(),
-            stk, stk.get1mPct(), 1,
-            stk, stk.get5mPct(), 5,
-            stk, stk.get10mPct(), 10,
-            stk, stk.get20mPct(), 20,
-        ]
-        table.add_row(*row_cells)
+            colorize_pct(stk.getAbs()),
+            safe_pct(stk.getAge(), stk.get1mPct(), 1),
+            safe_pct(stk.getAge(), stk.get5mPct(), 5),
+            safe_pct(stk.getAge(), stk.get10mPct(), 10),
+            safe_pct(stk.getAge(), stk.get20mPct(), 20)
+        )
         # If it met criteria, add a second row with the “criteria/peak” info
         if stk.hasMetCrit():
             crit_time_str = stk.getCritTime().strftime("%H:%M:%S")
             time_max_str  = stk.getTimeMaxPrice().strftime("%H:%M:%S")
             peak_change   = stk.getPeakChange()  # absolute % from critPrice
-
-            # TODO: colorize peak_change in second line
             second_line = (
                 f"[bold yellow]-> Crit:[/bold yellow] {crit_time_str}, "
                 f"${stk.getCritPrice():.2f} | [bold yellow]Peak:[/bold yellow] {time_max_str}, "
-                f"${stk.getMaxPrice():.2f}, Vol: {stk.getVolAtMaxPrice()} => {peak_change}"
+                f"${stk.getMaxPrice():.2f}, Vol: {stk.getVolAtMaxPrice()} => {colorize_pct(peak_change)}"
             )
             # We'll put that entire info into the first column, leaving the others blank
-            table.add_row(
-                second_line,
-                "",
-                "",
-                "",
-                "",
-                "",
-                ""
-            )
+            table.add_row(second_line, "", "", "", "", "")
     console.print(table)
 
 def show_eod_stats(gainers, pctChgDes):
@@ -152,8 +163,7 @@ def show_eod_stats(gainers, pctChgDes):
         peak_change   = s.getPeakChange()
         
         volume_str = s.getVolAtMaxPrice()
-        # TODO: We want the peak change to be colorized
-        peak_str = peak_change
+        peak_str = colorize_pct(peak_change)
         crit_price_str = f"${s.getCritPrice():.2f}"
         max_price_str  = f"${s.getMaxPrice():.2f}"
 
