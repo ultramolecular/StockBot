@@ -55,6 +55,9 @@ OPEN_HR = int(os.getenv('OPEN_HR', ''))
 CLOSE_HR = int(os.getenv('CLOSE_HR', ''))
 MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30, second=0)
 MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
+refRateDes = None
+pctChgDes = None
+pctChgAfter = None
 
 
 def colorize_pct(val):
@@ -212,17 +215,26 @@ def in_gainers(gainers, filt):
 
 # Check if current day is within market week
 if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
-    # If user started program before market open time, wait until open
+    # If user started program before market open time, wait until open and get params from user
     if dt.now() < MARKET_OPEN:
-        print(f"Market isn't open just yet, waiting until open @ {MARKET_OPEN.strftime('%H:%M:%S')}...\n")
-        while dt.now() < MARKET_OPEN:
-            pass
-    # Once we're within market hours, begin program specification set up and navigation
-    if dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE:
-        print("Market: OPEN\n")
+        print(f"Market isn't open just yet, waiting until open @ {MARKET_OPEN.strftime('%H:%M:%S')} ...",
+                "input parameters while you wait!\n")
         refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
         pctChgDes = float(input(r"Enter percent change desired (y% format): "))
         pctChgAfter = float(input("Enter percent change desired after it has met initial desired change: "))
+        print()
+ 
+        while dt.now() < MARKET_OPEN:
+            pass
+
+    # Once we're within market hours, begin program specification set up and navigation
+    if dt.now() >= MARKET_OPEN and dt.now() <= MARKET_CLOSE:
+        print("Market: OPEN\n")
+        # Ask the user for parameters if they didn't input them before market open
+        if not refRateDes:
+            refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
+            pctChgDes = float(input(r"Enter percent change desired (y% format): "))
+            pctChgAfter = float(input("Enter percent change desired after it has met initial desired change: "))
 
         # Go to TradingView
         driv.get(URL)
