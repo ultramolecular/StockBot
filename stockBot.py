@@ -214,7 +214,7 @@ def in_gainers(gainers, filt):
 if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
     # If user started program before market open time, wait until open
     if dt.now() < MARKET_OPEN:
-        print(f"Market isn't open just yet, waiting until open @ {MARKET_OPEN.strftime('%H:%M:%S')}...")
+        print(f"Market isn't open just yet, waiting until open @ {MARKET_OPEN.strftime('%H:%M:%S')}...\n")
         while dt.now() < MARKET_OPEN:
             pass
     # Once we're within market hours, begin program specification set up and navigation
@@ -332,6 +332,8 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
 
         # End-of-day summary
         show_eod_stats(gainers, pctChgDes)
+
+    print("\nMarket closed now, come back next market day!\n")
 else:
     print("\nMarket: CLOSED, return next market day!\n")
 
