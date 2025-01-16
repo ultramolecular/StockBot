@@ -60,6 +60,24 @@ pctChgDes = None
 pctChgAfter = None
 
 
+def getIntervalLabels(refRateMins):
+    """
+    Return a tuple of 4 strings representing how we want to label the columns.
+    E.g. if intervals=[1,5,10,20], and refRateMins=2.0 => steps_for=[2,4,10,20],
+    so effectively '1-lot' is 2 real minutes, '5-lot' is 4 real minutes, etc.
+    """
+    intervals = [1, 5, 10, 20]
+    labels = []
+    for minutes in intervals:
+        steps_float = minutes / refRateMins
+        steps = round(steps_float)
+        # In case round() brings steps to zero due to higher refRateMins
+        steps = steps if steps > 0 else 1
+        real_time = int(steps * refRateMins)
+        label_str = f"{real_time}m"
+        labels.append(label_str)
+    return tuple(labels)
+
 def colorize_pct(val):
     """
     Colorizes given percentages using Rich markup e.g. [green]2.53%[/green].
@@ -83,7 +101,7 @@ def safe_pct(stk_age, val, min_age):
     else:
         return "--"
 
-def show_top_5(gainers):
+def show_top_5(gainers, labels):
     """
     Prints a table for the top 5 gainers with columns:
     [Ticker | Price | Abs% | 1m % | 5m % | 10m % | 20m %].
@@ -105,10 +123,10 @@ def show_top_5(gainers):
     table.add_column("Ticker", style="bold white")
     table.add_column("Price", justify="right")
     table.add_column("Abs", justify="right")
-    table.add_column("1m", justify="right")
-    table.add_column("5m", justify="right")
-    table.add_column("10m", justify="right")
-    table.add_column("20m", justify="right")
+    table.add_column(f"{labels[0]}", justify="right")
+    table.add_column(f"{labels[1]}", justify="right")
+    table.add_column(f"{labels[2]}", justify="right")
+    table.add_column(f"{labels[3]}", justify="right")
 
     for stk in top5:
         # Primary row for the main data
@@ -132,7 +150,7 @@ def show_top_5(gainers):
                 f"${stk.getMaxPrice():.2f}, Vol: {stk.getVolAtMaxPrice()} => {colorize_pct(peak_change)}"
             )
             # We'll put that entire info into the first column, leaving the others blank
-            table.add_row(second_line, "", "", "", "", "", "")
+            table.add_row(second_line)
     console.print(table)
 
 def show_eod_stats(gainers, pctChgDes):
@@ -335,7 +353,7 @@ if dt.now().weekday() >= MARKET_MONDAY and dt.now().weekday() <= MARKET_FRIDAY:
             # Sort list from highest gainers to lowest and show top 5 if list is changed
             if changed:
                 gainers.sort(key=lambda s: s.getAbs(), reverse=True)
-                show_top_5(gainers)
+                show_top_5(gainers, getIntervalLabels(refRateDes / 60))
 
             # Sleep
             sleep(refRateDes if changed else 10)
