@@ -110,35 +110,56 @@ class Stock:
     def get20mPct(self):
         return self.twentyMinPctChg
 
-    def updateIntervals(self, price, vol, currTime):
+    def updateIntervals(self, price, vol, currTime, refRateMins=1.0):
         """
-        Update the 1m, 5m, 10m, 20m intervals, age of the stock, as well as criteria
-        stats once stock has met criteria. Called from the main loop in stockBot.py.
+        Update the stock's intervals based on the refresh rate (in minutes).
+        E.g., if refRateMins=0.5 (30s), '1m' is 2 intervals, '5m' is 10 intervals, etc.
+        If refRateMins=2.0, then the '1m' slot might be 0 or 1 iteration away.
         """
         self.age = (currTime - self.TIME_ENTERED).seconds // 60
         self.pastPrices.append(price)
+
+        intervals = [1, 5, 10, 20]
+        steps_for = []
+        for minutes in intervals:
+            steps_float = minutes / refRateMins
+            # We'll round to nearest int so we do our best guess
+            steps = round(steps_float)
+            steps_for.append(steps if steps > 0 else 1)
+            # We ensure at least 1 step, so we don't skip an interval altogether
+
+        # Now steps_for = [steps_1m, steps_5m, steps_10m, steps_20m]
         qLen = len(self.pastPrices)
+        # Helper to get the price from 'n steps' ago
+        def get_price_n_steps_ago(n):
+            idx = qLen - 1 - n  # '-1' because the last is our current price
+            if idx < 0:
+                # we don't have enough data, fallback to first known price
+                idx = 0
+            return self.pastPrices[idx]
 
         # 1-minute interval
-        if self.age >= 1:
-            i = qLen - 2 if qLen - 2 >= 0 else 0
-            self.oneMinPctChg = ((price - self.pastPrices[i]) / self.pastPrices[i]) * 100
-        
+        steps_1 = steps_for[0]
+        price_1m_ago = get_price_n_steps_ago(steps_1)
+        self.oneMinPctChg = ((price - price_1m_ago) / price_1m_ago) * 100 if price_1m_ago else 0
+
         # 5-minute interval
-        if self.age >= 5:
-            i = qLen - 6 if qLen - 6 >= 0 else 0
-            self.fiveMinPctChg = ((price - self.pastPrices[i]) / self.pastPrices[i]) * 100
-        
+        steps_5 = steps_for[1]
+        price_5m_ago = get_price_n_steps_ago(steps_5)
+        self.fiveMinPctChg = ((price - price_5m_ago) / price_5m_ago) * 100 if price_5m_ago else 0
+
         # 10-minute interval
-        if self.age >= 10:
-            i = qLen - 11 if qLen - 11 >= 0 else 0
-            self.tenMinPctChg = ((price - self.pastPrices[i]) / self.pastPrices[i]) * 100
-        
+        steps_10 = steps_for[2]
+        price_10m_ago = get_price_n_steps_ago(steps_10)
+        self.tenMinPctChg = ((price - price_10m_ago) / price_10m_ago) * 100 if price_10m_ago else 0
+
         # 20-minute interval
-        if self.age >= 20:
-            i = qLen - 21 if qLen - 21 >= 0 else 0
-            self.twentyMinPctChg = ((price - self.pastPrices[i]) / self.pastPrices[i]) * 100
-            # Keep queue size limited
+        steps_20 = steps_for[3]
+        price_20m_ago = get_price_n_steps_ago(steps_20)
+        self.twentyMinPctChg = ((price - price_20m_ago) / price_20m_ago) * 100 if price_20m_ago else 0
+
+        # Keep queue size limited to e.g. 40 or 80 to avoid unbounded growth
+        if len(self.pastPrices) > 200:
             self.pastPrices.pop(0)
 
         # If we've already met criteria, see if price is a new maximum
