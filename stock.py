@@ -6,9 +6,11 @@
 # absolute pct chg, the time it entered the gainers list and its age, and a queue/list of its past      #
 # prices up to the last 20 minutes.                                                                     #
 #-------------------------------------------------------------------------------------------------------#
+from datetime import datetime
+from typing import Optional
 
 class Stock:
-    def __init__(self, ticker, price, vol, currTime):
+    def __init__(self, ticker: str, price: float, vol: str, currTime: datetime):
         self.TICKER = ticker
         self.price = price
         self.basePrice = price
@@ -29,30 +31,33 @@ class Stock:
         self.timeMaxPrice = None
         self.volumeAtMaxPrice = vol
 
-    def getTicker(self):
+    def getTicker(self) -> str:
         return self.TICKER
 
-    def getNewAbs(self, price):
+    def getNewAbs(self, price: float) -> float:
         """Calculate the new absolute percent change relative to OG_PRICE."""
         return ((price - self.OG_PRICE) / self.OG_PRICE) * 100
 
-    def setNewAfter(self, newPrice):
+    def setNewAfter(self, newPrice: float):
         """Sets the relative % change if user criteria is already met."""
-        self.pctChgAfter = ((newPrice - self.basePrice) / self.basePrice) * 100 if self.metCrit else 0
+        if self.metCrit:
+            self.pctChgAfter = ((newPrice - self.basePrice) / self.basePrice) * 100
+        else:
+            self.pctChgAfter = 0.0
 
-    def getAfter(self):
+    def getAfter(self) -> float:
         return self.pctChgAfter
 
-    def getAbs(self):
+    def getAbs(self) -> float:
         return self.absPctChg
 
-    def setAbs(self, newAbs):
+    def setAbs(self, newAbs: float):
         self.absPctChg = newAbs
 
-    def getAge(self):
+    def getAge(self) -> int:
         return self.age
 
-    def hasMetCrit(self):
+    def hasMetCrit(self) -> bool:
         return self.metCrit
 
     def didMeetCrit(self):
@@ -61,56 +66,55 @@ class Stock:
         if not already set.
         """
         self.metCrit = True
-        # Only record the first time we met criteria
         if self.critTime is None:
-            from datetime import datetime
             self.critTime = datetime.now()
             self.critPrice = self.price
-            # Initialize max tracking to current
             self.maxPrice = self.price
             self.timeMaxPrice = datetime.now()
 
-    def setPrice(self, newPrice):
+    def setPrice(self, newPrice: float):
         self.price = newPrice
 
-    def setBasePrice(self, newPrice):
+    def setBasePrice(self, newPrice: float):
         self.basePrice = newPrice
 
-    def getMaxPrice(self):
+    def getMaxPrice(self) -> float:
         return self.maxPrice
 
-    def getTimeMaxPrice(self):
+    def getTimeMaxPrice(self) -> Optional[datetime]:
         return self.timeMaxPrice
 
-    def getVolAtMaxPrice(self):
+    def getVolAtMaxPrice(self) -> str:
         return self.volumeAtMaxPrice
 
-    def getCritTime(self):
+    def getCritTime(self) -> Optional[datetime]:
         return self.critTime
 
-    def getCritPrice(self):
+    def getCritPrice(self) -> Optional[float]:
         return self.critPrice
 
-    def getPeakChange(self):
+    def getPeakChange(self) -> float:
         """
         Compute how much the maxPrice is, in percent change, relative to the
         price when stock hit criteria (critPrice).
         """
-        return ((self.maxPrice - self.critPrice) / self.critPrice) * 100
+        if self.critPrice is not None and self.critPrice != 0.0:
+            return ((self.maxPrice - self.critPrice) / self.critPrice) * 100
+        return 0.0
 
-    def get1mPct(self):
+    def get1mPct(self) -> float:
         return self.oneMinPctChg
 
-    def get5mPct(self):
+    def get5mPct(self) -> float:
         return self.fiveMinPctChg
 
-    def get10mPct(self):
+    def get10mPct(self) -> float:
         return self.tenMinPctChg
 
-    def get20mPct(self):
+    def get20mPct(self) -> float:
         return self.twentyMinPctChg
 
-    def updateIntervals(self, price, vol, currTime, refRateMins=1.0):
+    def updateIntervals(self, price: float, vol: str, currTime: datetime, refRateMins: float = 1.0):
         """
         Update the stock's intervals based on the refresh rate (in minutes).
         E.g., if refRateMins=0.5 (30s), '1m' is 2 intervals, '5m' is 10 intervals, etc.
@@ -123,47 +127,41 @@ class Stock:
         steps_for = []
         for minutes in intervals:
             steps_float = minutes / refRateMins
-            # We'll round to nearest int so we do our best guess
             steps = round(steps_float)
             steps_for.append(steps if steps > 0 else 1)
-            # We ensure at least 1 step, so we don't skip an interval altogether
 
-        # Now steps_for = [steps_1m, steps_5m, steps_10m, steps_20m]
         qLen = len(self.pastPrices)
-        # Helper to get the price from 'n steps' ago
-        def get_price_n_steps_ago(n):
-            idx = qLen - 1 - n  # '-1' because the last is our current price
+
+        def get_price_n_steps_ago(n: int) -> float:
+            idx = qLen - 1 - n
             if idx < 0:
-                # we don't have enough data, fallback to first known price
                 idx = 0
             return self.pastPrices[idx]
 
-        # 1-minute interval
+        # 1m
         steps_1 = steps_for[0]
         price_1m_ago = get_price_n_steps_ago(steps_1)
         self.oneMinPctChg = ((price - price_1m_ago) / price_1m_ago) * 100 if price_1m_ago else 0
 
-        # 5-minute interval
+        # 5m
         steps_5 = steps_for[1]
         price_5m_ago = get_price_n_steps_ago(steps_5)
         self.fiveMinPctChg = ((price - price_5m_ago) / price_5m_ago) * 100 if price_5m_ago else 0
 
-        # 10-minute interval
+        # 10m
         steps_10 = steps_for[2]
         price_10m_ago = get_price_n_steps_ago(steps_10)
         self.tenMinPctChg = ((price - price_10m_ago) / price_10m_ago) * 100 if price_10m_ago else 0
 
-        # 20-minute interval
+        # 20m
         steps_20 = steps_for[3]
         price_20m_ago = get_price_n_steps_ago(steps_20)
         self.twentyMinPctChg = ((price - price_20m_ago) / price_20m_ago) * 100 if price_20m_ago else 0
 
-        # Keep queue size limited to e.g. 40 or 80 to avoid unbounded growth
         if len(self.pastPrices) > 200:
             self.pastPrices.pop(0)
 
-        # If we've already met criteria, see if price is a new maximum
         if self.metCrit and price > self.maxPrice:
             self.maxPrice = price
-            self.timeMaxPrice = currTime 
+            self.timeMaxPrice = currTime
             self.volumeAtMaxPrice = vol
