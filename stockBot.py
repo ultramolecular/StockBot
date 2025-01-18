@@ -53,7 +53,7 @@ MARKET_MONDAY = 0
 MARKET_FRIDAY = 5
 OPEN_HR = int(os.getenv('OPEN_HR', ''))
 CLOSE_HR = int(os.getenv('CLOSE_HR', ''))
-MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=30, second=0)
+MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=31, second=0)
 MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 refRateDes = None
 pctChgDes = None
