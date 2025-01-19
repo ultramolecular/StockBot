@@ -127,15 +127,15 @@ def wait_for_market_open() -> tuple[float, float, float, bool]:
 def get_user_params() -> tuple[float, float, float]:
     """
     Prompt user for refresh rate, desired percent change, and secondary threshold.
-    Returns (refRateDesSeconds, pctChgDes, pctChgAfter).
+    Returns (ref_rate_desSeconds, pct_chg_des, pct_chg_after).
     """
-    refRateDes = float(input("Enter refresh rate (minutes) desired: ")) * 60
-    pctChgDes = float(input("Enter percent change desired (y% format): "))
-    pctChgAfter = float(
+    ref_rate_des = float(input("Enter refresh rate (minutes) desired: ")) * 60
+    pct_chg_des = float(input("Enter percent change desired (y% format): "))
+    pct_chg_after = float(
         input("Enter percent change desired after it has met initial desired change: ")
     )
 
-    return refRateDes, pctChgDes, pctChgAfter
+    return ref_rate_des, pct_chg_des, pct_chg_after
 
 
 def login_to_tradingview(driver: webdriver.Chrome, email: str, password: str):
@@ -236,9 +236,9 @@ def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[
 def process_stocks(
     gainers: list[Stock],
     new_data: list[tuple[str, float, str]],
-    refRateDes: float,
-    pctChgDes: float,
-    pctChgAfter: float,
+    ref_rate_des: float,
+    pct_chg_des: float,
+    pct_chg_after: float,
 ) -> bool:
     """
     Update each Stock or create new ones based on the newly scraped data.
@@ -246,46 +246,46 @@ def process_stocks(
     Returns True if anything changed, otherwise False.
     """
     changed = False
-    for stockName, price, vol in new_data:
-        stk = in_gainers(gainers, lambda s: s.getTicker() == stockName)
+    for stk_name, price, vol in new_data:
+        stk = in_gainers(gainers, lambda s: s.get_ticker() == stk_name)
         if stk:
-            newAbsPctChg = stk.getNewAbs(price)
-            stk.setNewAfter(price)
+            new_abs_pct_chg = stk.get_new_abs(price)
+            stk.set_new_after(price)
 
-            # pass refRate (in minutes) to update intervals
-            refRateMins = refRateDes / 60.0
-            stk.updateIntervals(price, vol, dt.now(), refRateMins)
+            # pass ref_rate (in minutes) to update intervals
+            ref_rate_mins = ref_rate_des / 60.0
+            stk.update_intervals(price, vol, dt.now(), ref_rate_mins)
 
-            if newAbsPctChg != stk.getAbs():
+            if new_abs_pct_chg != stk.get_abs():
                 changed = True
-                stk.setAbs(newAbsPctChg)
-                stk.setPrice(price)
+                stk.set_abs(new_abs_pct_chg)
+                stk.set_price(price)
 
             # check user criteria
-            if stk.getAbs() >= pctChgDes and not stk.hasMetCrit():
+            if stk.get_abs() >= pct_chg_des and not stk.has_met_crit():
                 print(
-                    f"\n{stk.getTicker()} grew by {stk.getAbs():.2f}% in top gainers! Check it out!"
+                    f"\n{stk.get_ticker()} grew by {stk.get_abs():.2f}% in top gainers! Check it out!"
                 )
-                stk.didMeetCrit()
-                stk.setBasePrice(price)
+                stk.did_meet_crit()
+                stk.set_base_price(price)
                 play_sound(SOUND)
-            elif stk.hasMetCrit() and stk.getAfter() >= pctChgAfter:
+            elif stk.has_met_crit() and stk.get_after() >= pct_chg_after:
                 print(
-                    f"\n{stk.getTicker()} grew by {stk.getAfter():.2f}% even after hitting your threshold {pctChgDes}%!"
+                    f"\n{stk.get_ticker()} grew by {stk.get_after():.2f}% even after hitting your threshold {pct_chg_des}%!"
                 )
-                stk.setBasePrice(price)
+                stk.set_base_price(price)
                 play_sound(SOUND)
 
         else:
             # brand new stock
-            newStock = Stock(stockName, price, vol, dt.now())
-            gainers.append(newStock)
+            new_stock = Stock(stk_name, price, vol, dt.now())
+            gainers.append(new_stock)
             changed = True
 
     return changed
 
 
-def getIntervalLabels(refRateMins: float) -> tuple[str, str, str, str]:
+def get_interval_labels(ref_rate_mins: float) -> tuple[str, str, str, str]:
     """
     Return a tuple of 4 strings representing column labels for intervals,
     e.g. '2m', '10m', etc., depending on the user’s refresh rate.
@@ -294,10 +294,10 @@ def getIntervalLabels(refRateMins: float) -> tuple[str, str, str, str]:
     intervals = [1, 5, 10, 20]
     labels = []
     for minutes in intervals:
-        steps_float = minutes / refRateMins
+        steps_float = minutes / ref_rate_mins
         steps = round(steps_float)
         steps = steps if steps > 0 else 1
-        real_time = int(steps * refRateMins)
+        real_time = int(steps * ref_rate_mins)
         label_str = f"{real_time}m"
         labels.append(label_str)
     return tuple(labels)
@@ -357,45 +357,45 @@ def show_top_5(gainers: list[Stock], labels: tuple[str, str, str, str]):
 
     for stk in top5:
         table.add_row(
-            stk.getTicker(),
+            stk.get_ticker(),
             f"${stk.price:.2f}",
-            colorize_pct(stk.getAbs()),
-            safe_pct(stk.getAge(), stk.get1mPct(), 1),
-            safe_pct(stk.getAge(), stk.get5mPct(), 5),
-            safe_pct(stk.getAge(), stk.get10mPct(), 10),
-            safe_pct(stk.getAge(), stk.get20mPct(), 20),
+            colorize_pct(stk.get_abs()),
+            safe_pct(stk.get_age(), stk.get_1m_pct(), 1),
+            safe_pct(stk.get_age(), stk.get_5m_pct(), 5),
+            safe_pct(stk.get_age(), stk.get_10m_pct(), 10),
+            safe_pct(stk.get_age(), stk.get_20m_pct(), 20),
         )
 
-        if stk.hasMetCrit():
-            crit_time = stk.getCritTime()
-            time_max = stk.getTimeMaxPrice()
+        if stk.has_met_crit():
+            crit_time = stk.get_crit_time()
+            time_max = stk.get_time_max_price()
             assert crit_time is not None, "Logic error: we must have crit time here!"
             assert time_max is not None, "Logic error: we must have time max here!"
             crit_time_str = crit_time.strftime("%H:%M:%S")
             time_max_str = time_max.strftime("%H:%M:%S")
-            peak_change = stk.getPeakChange()
+            peak_change = stk.get_peak_change()
             second_line = (
                 f"[bold yellow]-> Crit:[/bold yellow] {crit_time_str}, "
-                f"${stk.getCritPrice():.2f} | [bold yellow]Peak:[/bold yellow] {time_max_str}, "
-                f"${stk.getMaxPrice():.2f}, Vol: {stk.getVolAtMaxPrice()} => {colorize_pct(peak_change)}"
+                f"${stk.get_crit_price():.2f} | [bold yellow]Peak:[/bold yellow] {time_max_str}, "
+                f"${stk.get_max_price():.2f}, Vol: {stk.get_vol_at_max_price()} => {colorize_pct(peak_change)}"
             )
             table.add_row(second_line)
 
     console.print(table)
 
 
-def show_eod_stats(gainers: list[Stock], pctChgDes: float):
+def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
     """
-    End-of-day summary for all stocks that have met or surpassed pctChgDes, in a Rich table.
+    End-of-day summary for all stocks that have met or surpassed pct_chg_des, in a Rich table.
     """
-    winners = [s for s in gainers if s.hasMetCrit()]
+    winners = [s for s in gainers if s.has_met_crit()]
     if not winners:
         print("\nNo stocks met or surpassed your desired growth today.")
         return
 
     console = Console()
     table = Table(
-        title=f"SUMMARY OF STOCKS THAT SURPASSED {pctChgDes}% GROWTH TODAY",
+        title=f"SUMMARY OF STOCKS THAT SURPASSED {pct_chg_des}% GROWTH TODAY",
         show_header=True,
         header_style="bold cyan",
     )
@@ -409,23 +409,23 @@ def show_eod_stats(gainers: list[Stock], pctChgDes: float):
     table.add_column("Peak %", justify="right")
 
     for s in winners:
-        crit_time = s.getCritTime()
-        time_max = s.getTimeMaxPrice()
+        crit_time = s.get_crit_time()
+        time_max = s.get_time_max_price()
         assert crit_time is not None, "Logic error: we must have crit time here!"
         assert time_max is not None, "Logic error: we must have time max here!"
         crit_time_str = crit_time.strftime("%H:%M:%S")
         time_max_str = time_max.strftime("%H:%M:%S")
-        peak_change = s.getPeakChange()
+        peak_change = s.get_peak_change()
 
-        volume_str = s.getVolAtMaxPrice()
+        volume_str = s.get_vol_at_max_price()
         peak_str = colorize_pct(peak_change)
-        crit_price_str = f"${s.getCritPrice():.2f}"
-        max_price_str = f"${s.getMaxPrice():.2f}"
+        crit_price_str = f"${s.get_crit_price():.2f}"
+        max_price_str = f"${s.get_max_price():.2f}"
 
         table.add_row(
             crit_time_str,
             crit_price_str,
-            s.getTicker(),
+            s.get_ticker(),
             time_max_str,
             max_price_str,
             volume_str,
@@ -438,9 +438,9 @@ def show_eod_stats(gainers: list[Stock], pctChgDes: float):
 def run_main_loop(
     driver: webdriver.Chrome,
     gainers: list[Stock],
-    refRateDes: float,
-    pctChgDes: float,
-    pctChgAfter: float,
+    ref_rate_des: float,
+    pct_chg_des: float,
+    pct_chg_after: float,
 ):
     """
     The main loop that repeatedly scrapes the gainers table, updates stocks,
@@ -450,14 +450,14 @@ def run_main_loop(
         # 1) Scrape
         new_data = scrape_stocks(driver)
         # 2) Process
-        changed = process_stocks(gainers, new_data, refRateDes, pctChgDes, pctChgAfter)
+        changed = process_stocks(gainers, new_data, ref_rate_des, pct_chg_des, pct_chg_after)
         # 3) If changed, sort and show top 5
         if changed:
-            gainers.sort(key=lambda s: s.getAbs(), reverse=True)
-            labels = getIntervalLabels(refRateDes / 60)
+            gainers.sort(key=lambda s: s.get_abs(), reverse=True)
+            labels = get_interval_labels(ref_rate_des / 60)
             show_top_5(gainers, labels)
         # 4) Sleep
-        sleep(refRateDes if changed else 10)
+        sleep(ref_rate_des if changed else 10)
         driver.refresh()
         sleep(1)
 
@@ -471,7 +471,7 @@ def main():
     dow = dt.now().weekday()
     if dow >= MARKET_MONDAY and dow <= MARKET_FRIDAY:
         # 2) Check if user started program before market open, if so get their input too
-        refRateDes, pctChgDes, pctChgAfter, got_params = wait_for_market_open()
+        ref_rate_des, pct_chg_des, pct_chg_after, got_params = wait_for_market_open()
         # 3) Check if we are within open/close window
         now = dt.now()
 
@@ -479,7 +479,7 @@ def main():
             print("Market: OPEN\n")
             # 4) Gather user parameters if we haven't already
             if not got_params:
-                refRateDes, pctChgDes, pctChgAfter = get_user_params()
+                ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
             # 5) Setup driver & login
             driver = setup_webdriver()
             driver.get(URL)
@@ -491,9 +491,9 @@ def main():
             # 8) Create main list
             gainers = []
             # 9) Run main loop
-            run_main_loop(driver, gainers, refRateDes, pctChgDes, pctChgAfter)
+            run_main_loop(driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after)
             # 10) End-of-day summary
-            show_eod_stats(gainers, pctChgDes)
+            show_eod_stats(gainers, pct_chg_des)
             print("\nMarket CLOSED now, come back next market day!\n")
 
             driver.close()
