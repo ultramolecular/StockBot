@@ -9,6 +9,7 @@
 from datetime import datetime
 from typing import Optional
 
+
 class Stock:
     def __init__(self, ticker: str, price: float, vol: str, currTime: datetime):
         self.TICKER = ticker
@@ -114,7 +115,9 @@ class Stock:
     def get20mPct(self) -> float:
         return self.twentyMinPctChg
 
-    def updateIntervals(self, price: float, vol: str, currTime: datetime, refRateMins: float = 1.0):
+    def updateIntervals(
+        self, price: float, vol: str, currTime: datetime, refRateMins: float = 1.0
+    ):
         """
         Update the stock's intervals based on the refresh rate (in minutes).
         E.g., if refRateMins=0.5 (30s), '1m' is 2 intervals, '5m' is 10 intervals, etc.
@@ -141,22 +144,30 @@ class Stock:
         # 1m
         steps_1 = steps_for[0]
         price_1m_ago = get_price_n_steps_ago(steps_1)
-        self.oneMinPctChg = ((price - price_1m_ago) / price_1m_ago) * 100 if price_1m_ago else 0
+        self.oneMinPctChg = (
+            ((price - price_1m_ago) / price_1m_ago) * 100 if price_1m_ago else 0
+        )
 
         # 5m
         steps_5 = steps_for[1]
         price_5m_ago = get_price_n_steps_ago(steps_5)
-        self.fiveMinPctChg = ((price - price_5m_ago) / price_5m_ago) * 100 if price_5m_ago else 0
+        self.fiveMinPctChg = (
+            ((price - price_5m_ago) / price_5m_ago) * 100 if price_5m_ago else 0
+        )
 
         # 10m
         steps_10 = steps_for[2]
         price_10m_ago = get_price_n_steps_ago(steps_10)
-        self.tenMinPctChg = ((price - price_10m_ago) / price_10m_ago) * 100 if price_10m_ago else 0
+        self.tenMinPctChg = (
+            ((price - price_10m_ago) / price_10m_ago) * 100 if price_10m_ago else 0
+        )
 
         # 20m
         steps_20 = steps_for[3]
         price_20m_ago = get_price_n_steps_ago(steps_20)
-        self.twentyMinPctChg = ((price - price_20m_ago) / price_20m_ago) * 100 if price_20m_ago else 0
+        self.twentyMinPctChg = (
+            ((price - price_20m_ago) / price_20m_ago) * 100 if price_20m_ago else 0
+        )
 
         if len(self.pastPrices) > 200:
             self.pastPrices.pop(0)
