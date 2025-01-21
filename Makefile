@@ -1,8 +1,7 @@
 MAIN_SCRIPT = bot.py
 REQUIREMENTS_FILE = requirements.txt
-OS := $(shell uname -s 2>NUL || echo Windows)
 
-ifeq ($(OS), Windows)
+ifeq ($(OS), Windows_NT)
 PYTHON := python
 else
 PYTHON := python3
