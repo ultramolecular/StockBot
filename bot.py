@@ -8,6 +8,7 @@
 #-----------------------------------------------------------------------------------------#
 from dotenv import load_dotenv
 from datetime import datetime as dt
+import openpyxl
 import os
 from pathlib import Path
 from platform import system
@@ -48,6 +49,8 @@ MARKET_MONDAY = 0
 MARKET_FRIDAY = 4
 OPEN_HR = int(os.getenv("OPEN_HR", ""))
 CLOSE_HR = int(os.getenv("CLOSE_HR", ""))
+EOD_EXPORT_DIR = os.getenv("EOD_EXPORT_PATH", "")
+EXPORT_PATH = Path(EOD_EXPORT_DIR) if EOD_EXPORT_DIR else None
 MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=31, second=0)
 MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
@@ -384,9 +387,79 @@ def show_top_5(gainers: list[Stock], labels: tuple[str, str, str, str]):
     console.print(table)
 
 
+def export_eod_stats_to_excel(
+    winners: list[Stock], export_dir: Path
+):
+    """
+    Create/write to an Excel file with the summary of stocks that met criteria.
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None, "Logic error: openpyxl's wb.active is unexpectedly None!"
+    ws.title = f"EOD Crit Stock Growth Summary"
+
+    headers = [
+        "CritTime",
+        "CritPrice",
+        "Ticker",
+        "PeakTime",
+        "MaxPrice",
+        "Volume",
+        "Peak%",
+    ]
+    ws.append(headers)
+
+    # Format for date/time we want
+    date_format = "HH:MM:SS"
+    pct_format = "0.00%"
+    currency_format = '"$"#,##0.00'
+
+    # Store today's date/time for naming
+    date_str = dt.now().strftime("%Y_%m_%d")
+
+    # Append a row for each winner
+    for s in winners:
+        crit_time = s.get_crit_time()
+        peak_time = s.get_time_max_price()
+        # e.g. 20.0 => 0.2 in excel
+        peak_change = s.get_peak_change() / 100.0
+
+        row = [
+            crit_time,  # datetime
+            s.get_crit_price(),  # float
+            s.get_ticker(),  # string
+            peak_time,  # datetime
+            s.get_max_price(),  # float
+            s.get_vol_at_max_price(),  # string
+            peak_change,  # float for actual %  e.g. 0.2 => 20%
+        ]
+        ws.append(row)
+
+    # Data starts at row 2
+    for i in range(2, len(winners) + 2):
+        # CritTime
+        ws.cell(row=i, column=1).number_format = date_format
+        # PeakTime
+        ws.cell(row=i, column=4).number_format = date_format
+        # CritPrice
+        ws.cell(row=i, column=2).number_format = currency_format
+        # MaxPrice
+        ws.cell(row=i, column=5).number_format = currency_format
+        # Peak%
+        ws.cell(row=i, column=7).number_format = pct_format
+
+    fname = f"eod_summary_{date_str}.xlsx"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    fpath = export_dir / fname
+
+    wb.save(str(fpath))
+    print(f"End-of-day summary exported to: {fpath}")
+
+
 def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
     """
     End-of-day summary for all stocks that have met or surpassed pct_chg_des, in a Rich table.
+    Saves to excel file if possible for record keeping.
     """
     winners = [s for s in gainers if s.has_met_crit()]
     if not winners:
@@ -433,6 +506,10 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
         )
 
     console.print(table)
+    if EXPORT_PATH is not None:
+        export_eod_stats_to_excel(winners, EXPORT_PATH)
+    else:
+        print("No EOD_EXPORT_PATH environment variable found; skipping Excel export.")
 
 
 def run_main_loop(
@@ -441,6 +518,7 @@ def run_main_loop(
     ref_rate_des: float,
     pct_chg_des: float,
     pct_chg_after: float,
+    labels: tuple[str, str, str, str],
 ):
     """
     The main loop that repeatedly scrapes the gainers table, updates stocks,
@@ -456,7 +534,6 @@ def run_main_loop(
         # 3) If changed, sort and show top 5
         if changed:
             gainers.sort(key=lambda s: s.get_abs(), reverse=True)
-            labels = get_interval_labels(ref_rate_des / 60)
             show_top_5(gainers, labels)
         # 4) Sleep
         sleep(ref_rate_des if changed else 10)
@@ -482,6 +559,7 @@ def main():
             # 4) Gather user parameters if we haven't already
             if not got_params:
                 ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
+            labels = get_interval_labels(ref_rate_des / 60)
             # 5) Setup driver & login
             driver = setup_webdriver()
             driver.get(URL)
@@ -493,7 +571,9 @@ def main():
             # 8) Create main list
             gainers = []
             # 9) Run main loop
-            run_main_loop(driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after)
+            run_main_loop(
+                driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after, labels
+            )
             # 10) End-of-day summary
             show_eod_stats(gainers, pct_chg_des)
             driver.close()
