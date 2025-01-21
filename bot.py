@@ -450,7 +450,9 @@ def run_main_loop(
         # 1) Scrape
         new_data = scrape_stocks(driver)
         # 2) Process
-        changed = process_stocks(gainers, new_data, ref_rate_des, pct_chg_des, pct_chg_after)
+        changed = process_stocks(
+            gainers, new_data, ref_rate_des, pct_chg_des, pct_chg_after
+        )
         # 3) If changed, sort and show top 5
         if changed:
             gainers.sort(key=lambda s: s.get_abs(), reverse=True)
@@ -494,10 +496,10 @@ def main():
             run_main_loop(driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after)
             # 10) End-of-day summary
             show_eod_stats(gainers, pct_chg_des)
-            print("\nMarket CLOSED now, come back next market day!\n")
-
             driver.close()
             driver.quit()
+
+        print("\nMarket CLOSED now, come back next market day!\n")
     else:
         print("\nMarket: CLOSED, return next market day!\n")
 
