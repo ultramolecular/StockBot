@@ -1,4 +1,5 @@
+openpyxl
 playsound
 python-dotenv
-selenium
 rich
+selenium
