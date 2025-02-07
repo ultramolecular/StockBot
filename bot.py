@@ -204,7 +204,7 @@ def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
     Scrape the table of stocks from the Gainers page and return a list
     of (ticker, price, volume).
     """
-    WebDriverWait(driver, 2).until(
+    WebDriverWait(driver, 4).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
     )
     rows = driver.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
@@ -217,6 +217,7 @@ def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
                 row.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS)
                 .text.strip()
                 .split()[0]
+                .replace(",", "")
             )
             price_val = float(price_text)
             vol_text = row.find_element(By.CSS_SELECTOR, VOL_CSS).text.strip()
