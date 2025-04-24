@@ -16,14 +16,16 @@ from time import sleep
 from typing import Callable, Optional
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from rich.console import Console
 from rich.table import Table
 from stock import Stock
+from webdriver_manager.chrome import ChromeDriverManager
 
 ##############################################################################
 #                           GLOBAL CONFIG                                    #
@@ -67,7 +69,8 @@ def setup_webdriver() -> webdriver.Chrome:
     if OS == "Windows":
         # Suppress extraneous logging in Windows
         options.add_experimental_option("excludeSwitches", ["enable-logging"])
-    driver = webdriver.Chrome(options=options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(options=options, service=service)
     driver.set_window_size(1080, 1044)
     return driver
 
