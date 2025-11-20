@@ -54,8 +54,6 @@ OPEN_HR = int(os.getenv("OPEN_HR", ""))
 CLOSE_HR = int(os.getenv("CLOSE_HR", ""))
 EOD_EXPORT_DIR = os.getenv("EOD_EXPORT_PATH", "")
 EXPORT_PATH = Path(EOD_EXPORT_DIR) if EOD_EXPORT_DIR else None
-MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=31, second=0)
-MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
 ##############################################################################
 #                           HELPER FUNCTIONS                                 #
@@ -112,13 +110,13 @@ def play_sound(file: str):
         playsound(file)
 
 
-def get_next_day(now=None) -> dt:
+def get_next_day(now=None) -> tuple[dt, dt]:
     if now is None:
         now = dt.now()
 
     wday = now.weekday()
     start_date = now.replace(hour=OPEN_HR, minute=31)
-    end_date = now.replace(hour=CLOSE_HR)
+    end_date = now.replace(hour=CLOSE_HR, minute=0)
 
     # If it's a weekend go to next Monday market open
     if wday >= 5:
@@ -127,19 +125,21 @@ def get_next_day(now=None) -> dt:
         next_mon = (now + timedelta(days=days_ahead)).replace(
                 hour=OPEN_HR, minute=31
         )
-        return next_mon
+        # Update MARKET_CLOSE to account for the new date
+        return next_mon, next_mon.replace(hour=CLOSE_HR)
     
     # If a weekday and it's before market open and close, run then
     if now < start_date or now < end_date:
-        return start_date
+        return start_date, end_date
     else:
         # After market close (still a weekday), schedule next day
         next_day = now + timedelta(days=1)
         # Check if the next day is Saturday to skip to Monday
         if next_day.weekday == 5:
-            next_day += timedelta(days=2)
+            next_day += timedelta(days=2) 
         
-        return next_day.replace(hour=OPEN_HR, minute=31)
+        return next_day.replace(hour=OPEN_HR, minute=31), \
+                next_day.replace(hour=CLOSE_HR, minute=0)
 
 
 def get_user_params() -> tuple[float, float, float]:
@@ -529,6 +529,7 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
 
 
 def run_main_loop(
+    MARKET_CLOSE: dt,
     driver: webdriver.Chrome,
     gainers: list[Stock],
     ref_rate_des: float,
@@ -575,19 +576,20 @@ def main():
     while True:
         # Get next market day
         now = dt.now()
-        next_run = get_next_day(now)
-        sec_until_open = (next_run - now).total_seconds() 
+        next_open, next_close = get_next_day(now)
+        sec_until_open = (next_open - now).total_seconds() 
         labels = get_interval_labels(ref_rate_des / 60)
         # Create main list
         gainers = []
         # Wait until market open of next available day
         if sec_until_open > 0:
-            print(f"\nWaiting until market open on {next_run.strftime('%a')}" \
-                    f" @ {next_run.hour}:{next_run.minute} ...")
+            print(f"\nWaiting until market open on {next_open.strftime('%a')}" \
+                    f" @ {next_open.hour}:{next_open.minute} ...")
             sleep(sec_until_open)
         # Run main loop
         run_main_loop(
-            driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after, labels
+            next_close, driver, gainers, ref_rate_des, pct_chg_des,
+                                            pct_chg_after, labels
         )
         # End-of-day summary
         show_eod_stats(gainers, pct_chg_des)
