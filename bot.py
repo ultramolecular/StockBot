@@ -8,6 +8,7 @@
 #-----------------------------------------------------------------------------------------#
 from dotenv import load_dotenv
 from datetime import datetime as dt
+from datetime import time, timedelta
 import openpyxl
 import os
 from pathlib import Path
@@ -111,23 +112,34 @@ def play_sound(file: str):
         playsound(file)
 
 
-def wait_for_market_open() -> tuple[float, float, float, bool]:
-    """
-    If it's before market open, block until we hit the open time.
-    """
-    if dt.now() < MARKET_OPEN:
-        print(
-            f"Market isn't open yet (will open at {MARKET_OPEN.strftime('%H:%M:%S')}).\n"
-            "Input your parameters in the meantime! ...\n"
+def get_next_day(now=None) -> dt:
+    if now is None:
+        now = dt.now()
+
+    wday = now.weekday()
+    start_date = now.replace(hour=OPEN_HR, minute=31)
+    end_date = now.replace(hour=CLOSE_HR)
+
+    # If it's a weekend go to next Monday market open
+    if wday >= 5:
+        # Calc days until Monday
+        days_ahead = (7 - wday) % 7
+        next_mon = (now + timedelta(days=days_ahead)).replace(
+                hour=OPEN_HR, minute=31
         )
-        r, pd, pa = get_user_params()
-
-        while dt.now() < MARKET_OPEN:
-            pass
-
-        return r, pd, pa, True
-
-    return 0, 0, 0, False
+        return next_mon
+    
+    # If a weekday and it's before market open and close, run then
+    if now < start_date or now < end_date:
+        return start_date
+    else:
+        # After market close (still a weekday), schedule next day
+        next_day = now + timedelta(days=1)
+        # Check if the next day is Saturday to skip to Monday
+        if next_day.weekday == 5:
+            next_day += timedelta(days=2)
+        
+        return next_day.replace(hour=OPEN_HR, minute=31)
 
 
 def get_user_params() -> tuple[float, float, float]:
@@ -550,42 +562,36 @@ def main():
     Main entry point for the StockBot application.
     Checks market day, waits if before open, obtains user params, logs in, and runs main loop.
     """
-    # 1) Check if it's a weekday in [MON..FRI]
-    dow = dt.now().weekday()
-    if dow >= MARKET_MONDAY and dow <= MARKET_FRIDAY:
-        # 2) Check if user started program before market open, if so get their input too
-        ref_rate_des, pct_chg_des, pct_chg_after, got_params = wait_for_market_open()
-        # 3) Check if we are within open/close window
+    ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
+    # Setup driver & login
+    driver = setup_webdriver()
+    driver.get(URL)
+    login_to_tradingview(driver, EMAIL, PASS)
+    # Check recaptcha
+    check_recaptcha(driver)
+    # Go to Gainers page
+    driver.get(GAINS_URL)
+
+    while True:
+        # Get next market day
         now = dt.now()
-
-        if now >= MARKET_OPEN and now <= MARKET_CLOSE:
-            print("Market: OPEN\n")
-            # 4) Gather user parameters if we haven't already
-            if not got_params:
-                ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
-            labels = get_interval_labels(ref_rate_des / 60)
-            # 5) Setup driver & login
-            driver = setup_webdriver()
-            driver.get(URL)
-            login_to_tradingview(driver, EMAIL, PASS)
-            # 6) Check recaptcha
-            check_recaptcha(driver)
-            # 7) Go to Gainers page
-            driver.get(GAINS_URL)
-            # 8) Create main list
-            gainers = []
-            # 9) Run main loop
-            run_main_loop(
-                driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after, labels
-            )
-            # 10) End-of-day summary
-            show_eod_stats(gainers, pct_chg_des)
-            driver.close()
-            driver.quit()
-
-        print("\nMarket CLOSED now, come back next market day!\n")
-    else:
-        print("\nMarket: CLOSED, return next market day!\n")
+        next_run = get_next_day(now)
+        sec_until_open = (next_run - now).total_seconds() 
+        labels = get_interval_labels(ref_rate_des / 60)
+        # Create main list
+        gainers = []
+        # Wait until market open of next available day
+        if sec_until_open > 0:
+            print(f"\nWaiting until market open on {next_run.strftime('%a')}" \
+                    f" @ {next_run.hour}:{next_run.minute} ...")
+            sleep(sec_until_open)
+        # Run main loop
+        run_main_loop(
+            driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after, labels
+        )
+        # End-of-day summary
+        show_eod_stats(gainers, pct_chg_des)
+        print("\nMarket CLOSED now!\n")
 
 
 if __name__ == "__main__":
