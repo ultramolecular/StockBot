@@ -8,7 +8,7 @@
 #-----------------------------------------------------------------------------------------#
 from dotenv import load_dotenv
 from datetime import datetime as dt
-from datetime import time, timedelta
+from datetime import timedelta
 import openpyxl
 import os
 from pathlib import Path
@@ -135,9 +135,9 @@ def get_next_day(now=None) -> tuple[dt, dt]:
         # After market close (still a weekday), schedule next day
         next_day = now + timedelta(days=1)
         # Check if the next day is Saturday to skip to Monday
-        if next_day.weekday == 5:
+        if next_day.weekday() == 5:
             next_day += timedelta(days=2) 
-        
+
         return next_day.replace(hour=OPEN_HR, minute=31), \
                 next_day.replace(hour=CLOSE_HR, minute=0)
 
@@ -219,28 +219,34 @@ def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
     Scrape the table of stocks from the Gainers page and return a list
     of (ticker, price, volume).
     """
-    WebDriverWait(driver, 4).until(
+    WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
     )
-    rows = driver.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
+    rows = driver.execute_script(
+        """
+        const rowCss = arguments[0];
+        return Array.from(document.querySelectorAll(rowCss))
+            .slice(0, 100)
+            .map(r => {
+                const c = r.querySelectorAll("td");
+                if (c.length < 4) return null;
 
-    data = []
-    for row in rows:
-        try:
-            tick = row.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
-            price_text = (
-                row.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS)
-                .text.strip()
-                .split()[0]
-                .replace(",", "")
-            )
-            price_val = float(price_text)
-            vol_text = row.find_element(By.CSS_SELECTOR, VOL_CSS).text.strip()
-            data.append((tick, price_val, vol_text))
-        except ValueError as e:
-            print(f"Something went wrong with value extraction: {e}")
-    return data
+                const ticker =
+                    (c[0].querySelector("a")?.innerText || c[0].innerText)
+                        .trim();
 
+                const priceText = c[2].innerText.trim().replace(/[^0-9.]/g, '');
+                const price = parseFloat(priceText);
+                const vol = c[3].innerText.trim();
+
+                if (!ticker || Number.isNaN(price)) return null;
+                return { ticker, price, vol };
+            })
+            .filter(r => r !== null);
+        """,
+        STOCK_LIST_CSS,
+    )
+    return [(r["ticker"], r["price"], r["vol"]) for r in rows]
 
 def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[Stock]:
     """
