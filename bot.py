@@ -211,6 +211,17 @@ def check_recaptcha(driver: webdriver.Chrome):
         print("No reCAPTCHA detected. Continuing...")
 
 
+def wait_for_login(driver: webdriver.Chrome, timeout: int = 15):
+    """
+    Wait for the login dialog to be gone; this indicates TradingView
+    has finished processing the login. Mainly for reCAPTCHA logins.
+    """
+    # Wait until username field is no longer visible
+    WebDriverWait(driver, timeout).until(
+            EC.invisibility_of_element_located((By.ID, CREDS_IDS[0]))
+    )
+
+
 def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
     """
     Scrape the table of stocks from the Gainers page and return a list
@@ -569,33 +580,43 @@ def main():
     ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
     # Setup driver & login
     driver = setup_webdriver()
-    driver.get(URL)
-    login_to_tradingview(driver, EMAIL, PASS)
-    # Check recaptcha
-    check_recaptcha(driver)
-    # Go to Gainers page
-    driver.get(GAINS_URL)
+    try:
+        driver.get(URL)
+        login_to_tradingview(driver, EMAIL, PASS)
+        # Check recaptcha
+        check_recaptcha(driver)
+        # Make sure to wait for login (reCAPTCHA can be tricky with this)
+        wait_for_login(driver)
+        # Go to Gainers page
+        driver.get(GAINS_URL)
 
-    while True:
-        # Get next market day
-        now = dt.now()
-        next_open, next_close = get_next_day(now)
-        sec_until_open = (next_open - now).total_seconds() 
-        labels = get_interval_labels(ref_rate_des / 60)
-        # Create main list
-        gainers = []
-        # Wait until market open of next available day
-        if sec_until_open > 0:
-            print(f"\nWaiting until market open on {next_open.strftime('%a @ %H:%M:%S')}")
-            sleep(sec_until_open)
-        # Run main loop
-        run_main_loop(
-            next_close, driver, gainers, ref_rate_des, pct_chg_des,
-                                            pct_chg_after, labels
-        )
-        # End-of-day summary
-        show_eod_stats(gainers, pct_chg_des)
-        print("\nMarket CLOSED now!\n")
+        while True:
+            # Get next market day
+            now = dt.now()
+            next_open, next_close = get_next_day(now)
+            sec_until_open = (next_open - now).total_seconds() 
+            labels = get_interval_labels(ref_rate_des / 60)
+            # Create main list
+            gainers = []
+            # Wait until market open of next available day
+            if sec_until_open > 0:
+                print(f"\nWaiting until market open on {next_open.strftime('%a @ %H:%M:%S')}...")
+                sleep(sec_until_open)
+            # Run main loop
+            run_main_loop(
+                next_close, driver, gainers, ref_rate_des, pct_chg_des,
+                                                pct_chg_after, labels
+            )
+            # End-of-day summary
+            show_eod_stats(gainers, pct_chg_des)
+            print("\nMarket CLOSED now!\n")
+    except KeyboardInterrupt:
+        print("\nEnding program...")
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
