@@ -115,31 +115,28 @@ def get_next_day(now=None) -> tuple[dt, dt]:
         now = dt.now()
 
     wday = now.weekday()
-    start_date = now.replace(hour=OPEN_HR, minute=31)
-    end_date = now.replace(hour=CLOSE_HR, minute=0)
+    start_date = now.replace(hour=OPEN_HR, minute=30, second=30)
+    end_date = now.replace(hour=CLOSE_HR, minute=0, second=0)
 
     # If it's a weekend go to next Monday market open
     if wday >= 5:
         # Calc days until Monday
         days_ahead = (7 - wday) % 7
-        next_mon = (now + timedelta(days=days_ahead)).replace(
-                hour=OPEN_HR, minute=31
-        )
+        next_mon = start_date + timedelta(days=days_ahead)
         # Update MARKET_CLOSE to account for the new date
-        return next_mon, next_mon.replace(hour=CLOSE_HR)
+        return next_mon, next_mon.replace(hour=CLOSE_HR, minute=0, second=0)
     
     # If a weekday and it's before market open and close, run then
     if now < start_date or now < end_date:
         return start_date, end_date
     else:
         # After market close (still a weekday), schedule next day
-        next_day = now + timedelta(days=1)
+        next_day = start_date + timedelta(days=1)
         # Check if the next day is Saturday to skip to Monday
         if next_day.weekday() == 5:
             next_day += timedelta(days=2) 
 
-        return next_day.replace(hour=OPEN_HR, minute=31), \
-                next_day.replace(hour=CLOSE_HR, minute=0)
+        return next_day, next_day.replace(hour=CLOSE_HR, minute=0, second=0)
 
 
 def get_user_params() -> tuple[float, float, float]:
@@ -589,8 +586,7 @@ def main():
         gainers = []
         # Wait until market open of next available day
         if sec_until_open > 0:
-            print(f"\nWaiting until market open on {next_open.strftime('%a')}" \
-                    f" @ {next_open.hour}:{next_open.minute} ...")
+            print(f"\nWaiting until market open on {next_open.strftime('%a @ %H:%M:%S')}")
             sleep(sec_until_open)
         # Run main loop
         run_main_loop(
