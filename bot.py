@@ -71,6 +71,7 @@ def setup_webdriver() -> webdriver.Chrome:
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(options=options, service=service)
     driver.set_window_size(1080, 1044)
+    driver.set_page_load_timeout(20)
     return driver
 
 
@@ -219,6 +220,30 @@ def wait_for_login(driver: webdriver.Chrome, timeout: int = 15):
     # Wait until username field is no longer visible
     WebDriverWait(driver, timeout).until(
             EC.invisibility_of_element_located((By.ID, CREDS_IDS[0]))
+    )
+
+
+def wait_for_table(driver, timeout=15):
+    """
+    Wait until the gainers table loads by confirming at least one row
+    has a valid ticker and price.
+    """
+
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script(
+            """
+            const rows = document.querySelectorAll("tr[class*='listRow']");
+            if (!rows || rows.length === 0) return false;
+
+            const c = rows[0].querySelectorAll("td");
+            if (!c || c.length < 3) return false;
+
+            const ticker = (c[0].querySelector("a")?.innerText || c[0].innerText).trim();
+            const price = c[2].innerText.trim().replace(/[^0-9.]/g, '');
+
+            return ticker.length > 0 && price.length > 0;
+            """
+        )
     )
 
 
@@ -556,20 +581,28 @@ def run_main_loop(
     checks user criteria, displays top 5 if changed, etc.
     """
     while dt.now() < MARKET_CLOSE:
-        # 1) Scrape
+        # 1) Refresh the browser to get latest data
+        try:
+            driver.refresh()
+        except TimeoutException:
+            print("\n\033[1;33m[WARNING]\033[0m Page refresh timed out, continuing anyway...")
+        try:
+            wait_for_table(driver, 12)
+        except TimeoutException:
+            print("\n\033[1;33m[WARNING]\033[0m Table did not fully load after refresh...")
+
+        # 2) Scrape
         new_data = scrape_stocks(driver)
-        # 2) Process
+        # 3) Process
         changed = process_stocks(
             gainers, new_data, ref_rate_des, pct_chg_des, pct_chg_after
         )
-        # 3) If changed, sort and show top 5
+        # 4) If changed, sort and show top 5
         if changed:
             gainers.sort(key=lambda s: s.get_abs(), reverse=True)
             show_top_5(gainers, labels)
-        # 4) Sleep
+        # 5) Sleep
         sleep(ref_rate_des if changed else 10)
-        driver.refresh()
-        sleep(1)
 
 
 def main():
