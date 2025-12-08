@@ -8,6 +8,7 @@
 #-----------------------------------------------------------------------------------------#
 from dotenv import load_dotenv
 from datetime import datetime as dt
+from datetime import timedelta
 import openpyxl
 import os
 from pathlib import Path
@@ -53,8 +54,6 @@ OPEN_HR = int(os.getenv("OPEN_HR", ""))
 CLOSE_HR = int(os.getenv("CLOSE_HR", ""))
 EOD_EXPORT_DIR = os.getenv("EOD_EXPORT_PATH", "")
 EXPORT_PATH = Path(EOD_EXPORT_DIR) if EOD_EXPORT_DIR else None
-MARKET_OPEN = dt.now().replace(hour=OPEN_HR, minute=31, second=0)
-MARKET_CLOSE = dt.now().replace(hour=CLOSE_HR, minute=0, second=0)
 
 ##############################################################################
 #                           HELPER FUNCTIONS                                 #
@@ -72,6 +71,7 @@ def setup_webdriver() -> webdriver.Chrome:
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(options=options, service=service)
     driver.set_window_size(1080, 1044)
+    driver.set_page_load_timeout(20)
     return driver
 
 
@@ -111,23 +111,33 @@ def play_sound(file: str):
         playsound(file)
 
 
-def wait_for_market_open() -> tuple[float, float, float, bool]:
-    """
-    If it's before market open, block until we hit the open time.
-    """
-    if dt.now() < MARKET_OPEN:
-        print(
-            f"Market isn't open yet (will open at {MARKET_OPEN.strftime('%H:%M:%S')}).\n"
-            "Input your parameters in the meantime! ...\n"
-        )
-        r, pd, pa = get_user_params()
+def get_next_day(now=None) -> tuple[dt, dt]:
+    if now is None:
+        now = dt.now()
 
-        while dt.now() < MARKET_OPEN:
-            pass
+    wday = now.weekday()
+    start_date = now.replace(hour=OPEN_HR, minute=30, second=30)
+    end_date = now.replace(hour=CLOSE_HR, minute=0, second=0)
 
-        return r, pd, pa, True
+    # If it's a weekend go to next Monday market open
+    if wday >= 5:
+        # Calc days until Monday
+        days_ahead = (7 - wday) % 7
+        next_mon = start_date + timedelta(days=days_ahead)
+        # Update MARKET_CLOSE to account for the new date
+        return next_mon, next_mon.replace(hour=CLOSE_HR, minute=0, second=0)
+    
+    # If a weekday and it's before market open and close, run then
+    if now < start_date or now < end_date:
+        return start_date, end_date
+    else:
+        # After market close (still a weekday), schedule next day
+        next_day = start_date + timedelta(days=1)
+        # Check if the next day is Saturday to skip to Monday
+        if next_day.weekday() == 5:
+            next_day += timedelta(days=2) 
 
-    return 0, 0, 0, False
+        return next_day, next_day.replace(hour=CLOSE_HR, minute=0, second=0)
 
 
 def get_user_params() -> tuple[float, float, float]:
@@ -202,33 +212,74 @@ def check_recaptcha(driver: webdriver.Chrome):
         print("No reCAPTCHA detected. Continuing...")
 
 
+def wait_for_login(driver: webdriver.Chrome, timeout: int = 15):
+    """
+    Wait for the login dialog to be gone; this indicates TradingView
+    has finished processing the login. Mainly for reCAPTCHA logins.
+    """
+    # Wait until username field is no longer visible
+    WebDriverWait(driver, timeout).until(
+            EC.invisibility_of_element_located((By.ID, CREDS_IDS[0]))
+    )
+
+
+def wait_for_table(driver, timeout=15):
+    """
+    Wait until the gainers table loads by confirming at least one row
+    has a valid ticker and price.
+    """
+
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script(
+            """
+            const rows = document.querySelectorAll("tr[class*='listRow']");
+            if (!rows || rows.length === 0) return false;
+
+            const c = rows[0].querySelectorAll("td");
+            if (!c || c.length < 3) return false;
+
+            const ticker = (c[0].querySelector("a")?.innerText || c[0].innerText).trim();
+            const price = c[2].innerText.trim().replace(/[^0-9.]/g, '');
+
+            return ticker.length > 0 && price.length > 0;
+            """
+        )
+    )
+
+
 def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
     """
     Scrape the table of stocks from the Gainers page and return a list
     of (ticker, price, volume).
     """
-    WebDriverWait(driver, 4).until(
+    WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
     )
-    rows = driver.find_elements(By.CSS_SELECTOR, STOCK_LIST_CSS)
+    rows = driver.execute_script(
+        """
+        const rowCss = arguments[0];
+        return Array.from(document.querySelectorAll(rowCss))
+            .slice(0, 100)
+            .map(r => {
+                const c = r.querySelectorAll("td");
+                if (c.length < 4) return null;
 
-    data = []
-    for row in rows:
-        try:
-            tick = row.find_element(By.CSS_SELECTOR, STOCK_CSS).text.strip()
-            price_text = (
-                row.find_element(By.CSS_SELECTOR, STOCK_PRICES_CSS)
-                .text.strip()
-                .split()[0]
-                .replace(",", "")
-            )
-            price_val = float(price_text)
-            vol_text = row.find_element(By.CSS_SELECTOR, VOL_CSS).text.strip()
-            data.append((tick, price_val, vol_text))
-        except ValueError as e:
-            print(f"Something went wrong with value extraction: {e}")
-    return data
+                const ticker =
+                    (c[0].querySelector("a")?.innerText || c[0].innerText)
+                        .trim();
 
+                const priceText = c[2].innerText.trim().replace(/[^0-9.]/g, '');
+                const price = parseFloat(priceText);
+                const vol = c[3].innerText.trim();
+
+                if (!ticker || Number.isNaN(price)) return null;
+                return { ticker, price, vol };
+            })
+            .filter(r => r !== null);
+        """,
+        STOCK_LIST_CSS,
+    )
+    return [(r["ticker"], r["price"], r["vol"]) for r in rows]
 
 def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[Stock]:
     """
@@ -517,6 +568,7 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
 
 
 def run_main_loop(
+    MARKET_CLOSE: dt,
     driver: webdriver.Chrome,
     gainers: list[Stock],
     ref_rate_des: float,
@@ -529,20 +581,28 @@ def run_main_loop(
     checks user criteria, displays top 5 if changed, etc.
     """
     while dt.now() < MARKET_CLOSE:
-        # 1) Scrape
+        # 1) Refresh the browser to get latest data
+        try:
+            driver.refresh()
+        except TimeoutException:
+            print("\n\033[1;33m[WARNING]\033[0m Page refresh timed out, continuing anyway...")
+        try:
+            wait_for_table(driver, 12)
+        except TimeoutException:
+            print("\n\033[1;33m[WARNING]\033[0m Table did not fully load after refresh...")
+
+        # 2) Scrape
         new_data = scrape_stocks(driver)
-        # 2) Process
+        # 3) Process
         changed = process_stocks(
             gainers, new_data, ref_rate_des, pct_chg_des, pct_chg_after
         )
-        # 3) If changed, sort and show top 5
+        # 4) If changed, sort and show top 5
         if changed:
             gainers.sort(key=lambda s: s.get_abs(), reverse=True)
             show_top_5(gainers, labels)
-        # 4) Sleep
+        # 5) Sleep
         sleep(ref_rate_des if changed else 10)
-        driver.refresh()
-        sleep(1)
 
 
 def main():
@@ -550,42 +610,46 @@ def main():
     Main entry point for the StockBot application.
     Checks market day, waits if before open, obtains user params, logs in, and runs main loop.
     """
-    # 1) Check if it's a weekday in [MON..FRI]
-    dow = dt.now().weekday()
-    if dow >= MARKET_MONDAY and dow <= MARKET_FRIDAY:
-        # 2) Check if user started program before market open, if so get their input too
-        ref_rate_des, pct_chg_des, pct_chg_after, got_params = wait_for_market_open()
-        # 3) Check if we are within open/close window
-        now = dt.now()
+    ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
+    # Setup driver & login
+    driver = setup_webdriver()
+    try:
+        driver.get(URL)
+        login_to_tradingview(driver, EMAIL, PASS)
+        # Check recaptcha
+        check_recaptcha(driver)
+        # Make sure to wait for login (reCAPTCHA can be tricky with this)
+        wait_for_login(driver)
+        # Go to Gainers page
+        driver.get(GAINS_URL)
 
-        if now >= MARKET_OPEN and now <= MARKET_CLOSE:
-            print("Market: OPEN\n")
-            # 4) Gather user parameters if we haven't already
-            if not got_params:
-                ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
+        while True:
+            # Get next market day
+            now = dt.now()
+            next_open, next_close = get_next_day(now)
+            sec_until_open = (next_open - now).total_seconds() 
             labels = get_interval_labels(ref_rate_des / 60)
-            # 5) Setup driver & login
-            driver = setup_webdriver()
-            driver.get(URL)
-            login_to_tradingview(driver, EMAIL, PASS)
-            # 6) Check recaptcha
-            check_recaptcha(driver)
-            # 7) Go to Gainers page
-            driver.get(GAINS_URL)
-            # 8) Create main list
+            # Create main list
             gainers = []
-            # 9) Run main loop
+            # Wait until market open of next available day
+            if sec_until_open > 0:
+                print(f"\nWaiting until market open on {next_open.strftime('%a @ %H:%M:%S')}...")
+                sleep(sec_until_open)
+            # Run main loop
             run_main_loop(
-                driver, gainers, ref_rate_des, pct_chg_des, pct_chg_after, labels
+                next_close, driver, gainers, ref_rate_des, pct_chg_des,
+                                                pct_chg_after, labels
             )
-            # 10) End-of-day summary
+            # End-of-day summary
             show_eod_stats(gainers, pct_chg_des)
-            driver.close()
+            print("\nMarket CLOSED now!\n")
+    except KeyboardInterrupt:
+        print("\nEnding program...")
+    finally:
+        try:
             driver.quit()
-
-        print("\nMarket CLOSED now, come back next market day!\n")
-    else:
-        print("\nMarket: CLOSED, return next market day!\n")
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

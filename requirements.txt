@@ -1,5 +1,6 @@
 openpyxl
-playsound
+playsound==1.2.2; platform_system == "Windows"
 python-dotenv
 rich
 selenium
+webdriver-manager; platform_system == "Windows"
