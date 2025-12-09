@@ -23,6 +23,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from signal_scorer import SignalFeatures, SignalScorer
 from rich.console import Console
 from rich.table import Table
 from stock import Stock
@@ -312,7 +313,10 @@ def process_stocks(
 
             # pass ref_rate (in minutes) to update intervals
             ref_rate_mins = ref_rate_des / 60.0
+            # TODO: DELETE time interval methods?
             stk.update_intervals(price, vol, dt.now(), ref_rate_mins)
+            # Keep last technicals up to date
+            stk.update_technicals(vol, rvol=None, rsi=None)
 
             if new_abs_pct_chg != stk.get_abs():
                 changed = True
@@ -321,19 +325,38 @@ def process_stocks(
 
             # check user criteria
             if stk.get_abs() >= pct_chg_des and not stk.has_met_crit():
-                print(
-                    f"\n{stk.get_ticker()} grew by {stk.get_abs():.2f}% in top gainers! Check it out!"
+                # Build features for scoring
+                vol_shares = Stock.parse_volume_to_shares(vol) or 0.0
+                feats = SignalFeatures(
+                    ticker=stk.get_ticker(),
+                    price=price,
+                    abs_pct=stk.get_abs(),
+                    volume=vol_shares,
+                    float_shares=stk.float_shares,
+                    rvol=stk.last_rvol,
+                    rsi=stk.last_rsi,
+                    vol_float_ratio=stk.last_vol_float_ratio,
+                    time=dt.now(),
                 )
+                score_obj = SignalScorer.score(feats)
+                stk.snapshot_crit_technicals(score_obj.score, score_obj.tier)
+
+                # Log simple line for now
+                print(
+                    f"\n{stk.get_ticker()} +{stk.get_abs():.2f}% "
+                    f"| Score: {score_obj.score:+d} ({score_obj.tier})"
+                )
+
                 stk.did_meet_crit()
                 stk.set_base_price(price)
                 play_sound(SOUND)
+            # TODO: remove after criteria met logic?
             elif stk.has_met_crit() and stk.get_after() >= pct_chg_after:
                 print(
                     f"\n{stk.get_ticker()} grew by {stk.get_after():.2f}% even after hitting your threshold {pct_chg_des}%!"
                 )
                 stk.set_base_price(price)
                 play_sound(SOUND)
-
         else:
             # brand new stock
             new_stock = Stock(stk_name, price, vol, dt.now())
@@ -342,7 +365,7 @@ def process_stocks(
 
     return changed
 
-
+# TODO: DELETE time interval methods?
 def get_interval_labels(ref_rate_mins: float) -> tuple[str, str, str, str]:
     """
     Return a tuple of 4 strings representing column labels for intervals,
@@ -385,7 +408,7 @@ def safe_pct(stk_age: int, val: float, min_age: int) -> str:
     else:
         return "--"
 
-
+# TODO: DELETE or convert to new way of displaying top 5
 def show_top_5(gainers: list[Stock], labels: tuple[str, str, str, str]):
     """
     Renders the top 5 gainers in a Rich table. If a stock met criteria,
@@ -461,6 +484,10 @@ def export_eod_stats_to_excel(
         "MaxPrice",
         "Volume",
         "Peak%",
+        "Score",
+        "Tier",
+        "Peak%FromSpot",
+        "Time2Peak(min)",
     ]
     ws.append(headers)
 
@@ -478,6 +505,8 @@ def export_eod_stats_to_excel(
         peak_time = s.get_time_max_price()
         # e.g. 20.0 => 0.2 in excel
         peak_change = s.get_peak_change() / 100.0
+        peak_from_spot = s.get_peak_change_spot() / 100.0
+        time_to_peak = s.get_time_peak_alert()
 
         row = [
             crit_time,  # datetime
@@ -487,6 +516,10 @@ def export_eod_stats_to_excel(
             s.get_max_price(),  # float
             s.get_vol_at_max_price(),  # string
             peak_change,  # float for actual %  e.g. 0.2 => 20%
+            s.get_crit_score(),
+            s.get_crit_tier(),
+            peak_from_spot,
+            time_to_peak,
         ]
         ws.append(row)
 
@@ -502,6 +535,8 @@ def export_eod_stats_to_excel(
         ws.cell(row=i, column=5).number_format = currency_format
         # Peak%
         ws.cell(row=i, column=7).number_format = pct_format
+        # Peak%FromSpot
+        ws.cell(row=i, column=10).number_format = pct_format
 
     fname = f"eod_summary_{date_str}.xlsx"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -534,7 +569,11 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
     table.add_column("PeakTime", justify="right")
     table.add_column("MaxPrice", justify="right")
     table.add_column("Volume", justify="right")
-    table.add_column("Peak %", justify="right")
+    table.add_column("Peak%", justify="right")
+    table.add_column("Score", justify="right")
+    table.add_column("Tier", justify="right")
+    table.add_column("Peak%FromSpot", justify="right")
+    table.add_column("Time2Peak", justify="right")
 
     for s in winners:
         crit_time = s.get_crit_time()
@@ -544,11 +583,18 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
         crit_time_str = crit_time.strftime("%H:%M:%S")
         time_max_str = time_max.strftime("%H:%M:%S")
         peak_change = s.get_peak_change()
+        peak_from_spot = s.get_peak_change_spot()
+        time_to_peak = s.get_time_peak_alert()
+        crit_score = s.get_crit_score() if s.get_crit_score() is not None else 0
 
         volume_str = s.get_vol_at_max_price()
         peak_str = colorize_pct(peak_change)
         crit_price_str = f"${s.get_crit_price():.2f}"
         max_price_str = f"${s.get_max_price():.2f}"
+        peak_from_spot_str = colorize_pct(peak_from_spot)
+        time_to_peak_str = f"{time_to_peak} mins" if time_to_peak is not None else "--"
+        crit_score_str = f"{crit_score:+d}"
+        crit_tier_str = s.get_crit_tier() if s.get_crit_tier() is not None else "--"
 
         table.add_row(
             crit_time_str,
@@ -558,6 +604,10 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
             max_price_str,
             volume_str,
             peak_str,
+            peak_from_spot_str,
+            time_to_peak_str,
+            crit_score_str,
+            crit_tier_str
         )
 
     console.print(table)

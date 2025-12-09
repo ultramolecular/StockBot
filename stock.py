@@ -26,11 +26,22 @@ class Stock:
         self.five_min_pct_chg = 0.0
         self.ten_min_pct_chg = 0.0
         self.twenty_min_pct_chg = 0.0
-        self.crit_time = None
-        self.crit_price = None
         self.max_price = price
         self.time_max_price = None
         self.volume_at_max_price = vol
+        self.float_shares: Optional[float] = None
+        self.last_volume_str: str = vol
+        self.last_rvol: Optional[float] = None
+        self.last_rsi: Optional[float] = None
+        self.last_vol_float_ratio: Optional[float] = None
+        # Snapshot at criteria 
+        self.crit_time = None
+        self.crit_price = None
+        self.crit_rvol: Optional[float] = None
+        self.crit_rsi: Optional[float] = None
+        self.crit_vol_float_ratio: Optional[float] = None
+        self.crit_score: Optional[int] = None
+        self.crit_tier: Optional[str] = None
 
     def get_ticker(self) -> str:
         return self.TICKER
@@ -94,6 +105,12 @@ class Stock:
     def get_crit_price(self) -> Optional[float]:
         return self.crit_price
 
+    def get_crit_score(self) -> Optional[int]:
+        return self.crit_score
+    
+    def get_crit_tier(self) -> Optional[str]:
+        return self.crit_tier
+
     def get_peak_change(self) -> float:
         """
         Compute how much the max_price is, in percent change, relative to the
@@ -103,6 +120,24 @@ class Stock:
             return ((self.max_price - self.crit_price) / self.crit_price) * 100
         return 0.0
 
+    def get_peak_change_spot(self) -> float:
+        """
+        % change from OG_PRICE (time spotted) to max_price
+        """
+        if self.OG_PRICE:
+            return ((self.max_price - self.OG_PRICE) / self.OG_PRICE) * 100
+        return 0.0
+
+    def get_time_peak_alert(self) -> Optional[int]:
+        """
+        Minutes from crit time to the time of max price
+        """
+        if self.crit_time and self.time_max_price:
+            delta = self.time_max_price - self.crit_time
+            return int(delta.total_seconds() // 60)
+        return None
+
+    # TODO: DELETE time interval methods?
     def get_1m_pct(self) -> float:
         return self.one_min_pct_chg
 
@@ -176,3 +211,48 @@ class Stock:
             self.max_price = price
             self.time_max_price = curr_time
             self.volume_at_max_price = vol
+
+    @staticmethod
+    def parse_volume_to_shares(vol: str) -> Optional[float]:
+        """
+        Convert TradingView volume strings to raw number of shares.
+        """
+        if not vol:
+            return None
+        s = vol.strip().upper().replace(",", "")
+        mult = 1.0
+        if s.endswith("K"):
+            mult = 1_000
+            s = s[:-1]
+        elif s.endswith("M"):
+            mult = 1_000_000
+            s = s[:-1]
+        try:
+            return float(s) * mult
+        except ValueError:
+            return None
+
+    def update_technicals(
+        self,
+        volume_str: str,
+        rvol: Optional[float],
+        rsi: Optional[float],
+    ) -> None:
+        """Updates the indicators every loop"""
+        self.last_volume_str = volume_str
+        self.last_rvol = rvol
+        self.last_rsi = rsi
+
+        vol_shares = Stock.parse_volume_to_shares(volume_str)
+        if self.float_shares and self.float_shares > 0 and vol_shares:
+            self.last_vol_float_ratio = vol_shares / self.float_shares
+        else:
+            self.last_vol_float_ratio = None
+
+    def snapshot_crit_technicals(self, score: int, tier: str) -> None:
+        """Snapshots the technicals at the time criteria is met."""
+        self.crit_rvol = self.last_rvol
+        self.crit_rsi = self.last_rsi
+        self.crit_vol_float_ratio = self.last_vol_float_ratio
+        self.crit_score = score
+        self.crit_tier = tier
