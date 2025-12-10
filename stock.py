@@ -22,10 +22,6 @@ class Stock:
         self.TIME_ENTERED = curr_time
         self.age = 0
         self.past_prices = [price]
-        self.one_min_pct_chg = 0.0
-        self.five_min_pct_chg = 0.0
-        self.ten_min_pct_chg = 0.0
-        self.twenty_min_pct_chg = 0.0
         self.max_price = price
         self.time_max_price = None
         self.volume_at_max_price = vol
@@ -69,6 +65,9 @@ class Stock:
     def get_age(self) -> int:
         return self.age
 
+    def get_time_entered(self) -> datetime:
+        return self.TIME_ENTERED
+
     def has_met_crit(self) -> bool:
         return self.met_crit
 
@@ -105,6 +104,18 @@ class Stock:
     def get_crit_price(self) -> Optional[float]:
         return self.crit_price
 
+    def get_crit_rvol(self) -> Optional[float]:
+        return self.crit_rvol
+
+    def get_crit_rsi(self) -> Optional[float]:
+        return self.crit_rsi
+
+    def get_crit_vol_float_ratio(self) -> Optional[float]:
+        return self.crit_vol_float_ratio 
+
+    def get_float_shares(self) -> Optional[float]:
+        return self.float_shares
+
     def get_crit_score(self) -> Optional[int]:
         return self.crit_score
     
@@ -137,80 +148,32 @@ class Stock:
             return int(delta.total_seconds() // 60)
         return None
 
-    # TODO: DELETE time interval methods?
-    def get_1m_pct(self) -> float:
-        return self.one_min_pct_chg
-
-    def get_5m_pct(self) -> float:
-        return self.five_min_pct_chg
-
-    def get_10m_pct(self) -> float:
-        return self.ten_min_pct_chg
-
-    def get_20m_pct(self) -> float:
-        return self.twenty_min_pct_chg
-
     def update_intervals(
-        self, price: float, vol: str, curr_time: datetime, ref_rate_mins: float = 1.0
+        self,
+        price: float,
+        vol: str,
+        curr_time: datetime,
+        volume_str: str,
+        rvol: Optional[float],
+        rsi: Optional[float],
     ):
-        """
-        Update the stock's intervals based on the refresh rate (in minutes).
-        E.g., if ref_rate_mins=0.5 (30s), '1m' is 2 intervals, '5m' is 10 intervals, etc.
-        If ref_rate_mins=2.0, then the '1m' slot might be 0 or 1 iteration away.
-        """
+        """Updates the indicators every loop"""
         self.age = (curr_time - self.TIME_ENTERED).seconds // 60
-        self.past_prices.append(price)
+        self.last_volume_str = volume_str
+        self.last_rvol = rvol
+        self.last_rsi = rsi
 
-        intervals = [1, 5, 10, 20]
-        steps_for = []
-        for minutes in intervals:
-            steps_float = minutes / ref_rate_mins
-            steps = round(steps_float)
-            steps_for.append(steps if steps > 0 else 1)
-
-        q_len = len(self.past_prices)
-
-        def get_price_n_steps_ago(n: int) -> float:
-            idx = q_len - 1 - n
-            if idx < 0:
-                idx = 0
-            return self.past_prices[idx]
-
-        # 1m
-        steps_1 = steps_for[0]
-        price_1m_ago = get_price_n_steps_ago(steps_1)
-        self.one_min_pct_chg = (
-            ((price - price_1m_ago) / price_1m_ago) * 100 if price_1m_ago else 0
-        )
-
-        # 5m
-        steps_5 = steps_for[1]
-        price_5m_ago = get_price_n_steps_ago(steps_5)
-        self.five_min_pct_chg = (
-            ((price - price_5m_ago) / price_5m_ago) * 100 if price_5m_ago else 0
-        )
-
-        # 10m
-        steps_10 = steps_for[2]
-        price_10m_ago = get_price_n_steps_ago(steps_10)
-        self.ten_min_pct_chg = (
-            ((price - price_10m_ago) / price_10m_ago) * 100 if price_10m_ago else 0
-        )
-
-        # 20m
-        steps_20 = steps_for[3]
-        price_20m_ago = get_price_n_steps_ago(steps_20)
-        self.twenty_min_pct_chg = (
-            ((price - price_20m_ago) / price_20m_ago) * 100 if price_20m_ago else 0
-        )
-
-        if len(self.past_prices) > 200:
-            self.past_prices.pop(0)
+        vol_shares = Stock.parse_volume_to_shares(volume_str)
+        if self.float_shares and self.float_shares > 0 and vol_shares:
+            self.last_vol_float_ratio = vol_shares / self.float_shares
+        else:
+            self.last_vol_float_ratio = None
 
         if self.met_crit and price > self.max_price:
             self.max_price = price
             self.time_max_price = curr_time
             self.volume_at_max_price = vol
+            
 
     @staticmethod
     def parse_volume_to_shares(vol: str) -> Optional[float]:
@@ -231,23 +194,6 @@ class Stock:
             return float(s) * mult
         except ValueError:
             return None
-
-    def update_technicals(
-        self,
-        volume_str: str,
-        rvol: Optional[float],
-        rsi: Optional[float],
-    ) -> None:
-        """Updates the indicators every loop"""
-        self.last_volume_str = volume_str
-        self.last_rvol = rvol
-        self.last_rsi = rsi
-
-        vol_shares = Stock.parse_volume_to_shares(volume_str)
-        if self.float_shares and self.float_shares > 0 and vol_shares:
-            self.last_vol_float_ratio = vol_shares / self.float_shares
-        else:
-            self.last_vol_float_ratio = None
 
     def snapshot_crit_technicals(self, score: int, tier: str) -> None:
         """Snapshots the technicals at the time criteria is met."""

@@ -141,18 +141,15 @@ def get_next_day(now=None) -> tuple[dt, dt]:
         return next_day, next_day.replace(hour=CLOSE_HR, minute=0, second=0)
 
 
-def get_user_params() -> tuple[float, float, float]:
+def get_user_params() -> tuple[float, float]:
     """
     Prompt user for refresh rate, desired percent change, and secondary threshold.
     Returns (ref_rate_desSeconds, pct_chg_des, pct_chg_after).
     """
     ref_rate_des = float(input("Enter refresh rate (minutes) desired: ")) * 60
     pct_chg_des = float(input("Enter percent change desired (y% format): "))
-    pct_chg_after = float(
-        input("Enter percent change desired after it has met initial desired change: ")
-    )
 
-    return ref_rate_des, pct_chg_des, pct_chg_after
+    return ref_rate_des, pct_chg_des
 
 
 def login_to_tradingview(driver: webdriver.Chrome, email: str, password: str):
@@ -248,14 +245,20 @@ def wait_for_table(driver, timeout=15):
     )
 
 
-def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
+def click_header_tab(driver: webdriver.Chrome, tab: str):
     """
-    Scrape the table of stocks from the Gainers page and return a list
-    of (ticker, price, volume).
+    Clicks the given header tab on the top gainers table, overview/technicals.
     """
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
-    )
+    # TODO: implement this function
+    pass
+
+
+def scrape_overview(driver: webdriver.Chrome) -> list[dict]:
+    """
+    Scrape overview tab from TradingView: ticker, price, volume, rvol.
+    """
+    click_header_tab(driver, "overview")
+    wait_for_table(driver)
     rows = driver.execute_script(
         """
         const rowCss = arguments[0];
@@ -263,7 +266,7 @@ def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
             .slice(0, 100)
             .map(r => {
                 const c = r.querySelectorAll("td");
-                if (c.length < 4) return null;
+                if (c.length < 5) return null;
 
                 const ticker =
                     (c[0].querySelector("a")?.innerText || c[0].innerText)
@@ -273,14 +276,47 @@ def scrape_stocks(driver: webdriver.Chrome) -> list[tuple[str, float, str]]:
                 const price = parseFloat(priceText);
                 const vol = c[3].innerText.trim();
 
+                const rvolText = c[4].innerText.trim().replace(/[^0-9.]/g, '');
+                const rvol = parseFloat(rvolText);
+
                 if (!ticker || Number.isNaN(price)) return null;
-                return { ticker, price, vol };
+                return { ticker, price, vol, rvol };
             })
             .filter(r => r !== null);
         """,
         STOCK_LIST_CSS,
     )
-    return [(r["ticker"], r["price"], r["vol"]) for r in rows]
+    return rows
+
+def scrape_technicals(driver: webdriver.Chrome) -> dict[str, float]:
+    """
+    Scrape technicals tab for RSI.
+    """
+    click_header_tab(driver, "technicals")
+    wait_for_table(driver)
+    rows = driver.execute_script(
+        """
+        const rowCss = arguments[0];
+        const result = {};
+        Array.from(document.querySelectorAll(rowCss))
+            .slice(0, 100)
+            .forEach(r => {
+                const c = r.querySelectorAll("td");
+                if (c.length < 5) return;
+                const ticker =
+                    (c[0].querySelector("a")?.innerText || c[0].innerText)
+                        .trim();
+                const rsiText = c[4].innerText.trim().replace(/[^0-9.]/g, '');
+                const rsi = parseFloat(rsiText);
+                if (!ticker || Number.isNaN(rsi)) return;
+                result[ticker] = rsi;
+            });
+        return result;
+        """,
+        STOCK_LIST_CSS,
+    )
+    return rows
+
 
 def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[Stock]:
     """
@@ -294,8 +330,8 @@ def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[
 
 def process_stocks(
     gainers: list[Stock],
-    new_data: list[tuple[str, float, str]],
-    ref_rate_des: float,
+    alerted: list[Stock],
+    new_data: list[tuple[str, float, str, float, Optional[float]]],
     pct_chg_des: float,
     pct_chg_after: float,
 ) -> bool:
@@ -305,18 +341,14 @@ def process_stocks(
     Returns True if anything changed, otherwise False.
     """
     changed = False
-    for stk_name, price, vol in new_data:
+    for stk_name, price, vol, rvol, rsi in new_data:
         stk = in_gainers(gainers, lambda s: s.get_ticker() == stk_name)
         if stk:
             new_abs_pct_chg = stk.get_new_abs(price)
             stk.set_new_after(price)
 
-            # pass ref_rate (in minutes) to update intervals
-            ref_rate_mins = ref_rate_des / 60.0
-            # TODO: DELETE time interval methods?
-            stk.update_intervals(price, vol, dt.now(), ref_rate_mins)
             # Keep last technicals up to date
-            stk.update_technicals(vol, rvol=None, rsi=None)
+            stk.update_intervals(price, vol, dt.now(), vol, rvol, rsi)
 
             if new_abs_pct_chg != stk.get_abs():
                 changed = True
@@ -349,13 +381,8 @@ def process_stocks(
 
                 stk.did_meet_crit()
                 stk.set_base_price(price)
-                play_sound(SOUND)
-            # TODO: remove after criteria met logic?
-            elif stk.has_met_crit() and stk.get_after() >= pct_chg_after:
-                print(
-                    f"\n{stk.get_ticker()} grew by {stk.get_after():.2f}% even after hitting your threshold {pct_chg_des}%!"
-                )
-                stk.set_base_price(price)
+                alerted.append(stk)
+                show_alert_watchlist(alerted[:10]) # TODO: implement + sorting
                 play_sound(SOUND)
         else:
             # brand new stock
@@ -364,24 +391,6 @@ def process_stocks(
             changed = True
 
     return changed
-
-# TODO: DELETE time interval methods?
-def get_interval_labels(ref_rate_mins: float) -> tuple[str, str, str, str]:
-    """
-    Return a tuple of 4 strings representing column labels for intervals,
-    e.g. '2m', '10m', etc., depending on the user’s refresh rate.
-    This ensures the table column headers are more honest about the real intervals.
-    """
-    intervals = [1, 5, 10, 20]
-    labels = []
-    for minutes in intervals:
-        steps_float = minutes / ref_rate_mins
-        steps = round(steps_float)
-        steps = steps if steps > 0 else 1
-        real_time = int(steps * ref_rate_mins)
-        label_str = f"{real_time}m"
-        labels.append(label_str)
-    return tuple(labels)
 
 
 def colorize_pct(val: float) -> str:
@@ -408,59 +417,128 @@ def safe_pct(stk_age: int, val: float, min_age: int) -> str:
     else:
         return "--"
 
-# TODO: DELETE or convert to new way of displaying top 5
-def show_top_5(gainers: list[Stock], labels: tuple[str, str, str, str]):
-    """
-    Renders the top 5 gainers in a Rich table. If a stock met criteria,
-    prints a second row showing the criteria/peak info.
-    """
-    if not gainers:
+
+def style_for_score(score: int) -> str:
+    if score >= 11:
+        return "bold black on_green3"
+    elif score >= 8:
+        return "black on_chartreuse3"
+    elif score >= 5:
+        return "black on_yellow3"
+    else:
+        return "bold white on_red3"
+
+
+def style_for_rsi(rsi: Optional[float]) -> str:
+    if rsi is None:
+        return ""
+    if 60 <= rsi <= 75:
+        return "black on_green3"
+    elif 50 <= rsi < 60 or 75 < rsi <= 85:
+        return "black on_yellow3"
+    else:
+        return "white on_red3"
+
+
+def style_for_rvol(rvol: Optional[float]) -> str:
+    if rvol is None:
+        return ""
+    if rvol >= 10:
+        return "black on_green3"
+    elif rvol >= 5:
+        return "black on_yellow3"
+    else:
+        return "white on_red3"
+
+
+def show_alert_watchlist(stocks: list[Stock]) -> None:
+    if not stocks:
         return
 
     console = Console()
-    top5 = gainers[:5]
-    now_str = dt.now().strftime("%H:%M:%S")
-
     table = Table(
-        title=f"Top 5 Gainers @ {now_str}",
+        title="Alert Watchlist",
         show_header=True,
         header_style="bold cyan",
     )
 
-    # 7 columns total: Ticker, Price, Abs, 1m, 5m, 10m, 20m
-    table.add_column("Ticker")
-    table.add_column("Price", justify="right")
-    table.add_column("Abs", justify="right")
-    table.add_column(labels[0], justify="right")
-    table.add_column(labels[1], justify="right")
-    table.add_column(labels[2], justify="right")
-    table.add_column(labels[3], justify="right")
+    table.add_column("Ticker / Score", style="bold")
+    table.add_column("Time Spotted")
+    table.add_column("Time Alerted / Time to Peak")
+    table.add_column("FR")       # float rotation
+    table.add_column("RV")
+    table.add_column("RSI")
+    table.add_column("Price")
+    table.add_column("Volume/Float")
 
-    for stk in top5:
+    for s in stocks:
+        score = s.get_crit_score() or 0
+        tier = s.get_crit_tier() or "-"
+        score_style = style_for_score(score)
+
+        time_spotted = s.TIME_ENTERED.strftime("%H:%M:%S")
+        crit_time = s.get_crit_time()
+        peak_time = s.get_time_max_price()
+        time_alerted = crit_time.strftime("%H:%M:%S") if crit_time else "n/a"
+        time_peak = peak_time.strftime("%H:%M:%S") if peak_time else "n/a"
+        time_to_peak = s.get_time_peak_alert()
+        time_to_peak_str = f"{time_to_peak}m" if time_to_peak is not None else "n/a"
+
+        peak_from_spot = s.get_peak_change_spot()
+        peak_from_alert = s.get_peak_change()
+
+        rvol = s.get_crit_rvol()
+        rsi = s.get_crit_rsi()
+        vol_float = s.get_crit_vol_float_ratio()
+        if (float_m := s.get_float_shares()):
+            float_m /= 1_000_000
+
+        rvol_style = style_for_rvol(rvol)
+        rsi_style = style_for_rsi(rsi)
+
+        fr_str = f"{vol_float:.2f}x" if vol_float is not None else "n/a"
+        rv_str = f"{rvol:.1f}x" if rvol is not None else "n/a"
+        rsi_str = f"{rsi:.0f}" if rsi is not None else "n/a"
+        price_str = f"${s.get_max_price():.2f}"
+        vol_str = s.get_vol_at_max_price()
+        float_str = f"{float_m:.2f}M" if float_m is not None else "n/a"
+        vol_float_str = f"{vol_str} / {float_str}"
+
+        # Row 1: ticker + score, spotted time, alert time, technicals at crit
         table.add_row(
-            stk.get_ticker(),
-            f"${stk.price:.2f}",
-            colorize_pct(stk.get_abs()),
-            safe_pct(stk.get_age(), stk.get_1m_pct(), 1),
-            safe_pct(stk.get_age(), stk.get_5m_pct(), 5),
-            safe_pct(stk.get_age(), stk.get_10m_pct(), 10),
-            safe_pct(stk.get_age(), stk.get_20m_pct(), 20),
+            f"[{score_style}]{s.get_ticker()} ({tier} {score:+d})[/]",
+            time_spotted,
+            time_alerted,
+            fr_str,
+            f"[{rvol_style}]{rv_str}[/]" if rvol is not None else rv_str,
+            f"[{rsi_style}]{rsi_str}[/]" if rsi is not None else rsi_str,
+            price_str,
+            vol_float_str,
         )
 
-        if stk.has_met_crit():
-            crit_time = stk.get_crit_time()
-            time_max = stk.get_time_max_price()
-            assert crit_time is not None, "Logic error: we must have crit time here!"
-            assert time_max is not None, "Logic error: we must have time max here!"
-            crit_time_str = crit_time.strftime("%H:%M:%S")
-            time_max_str = time_max.strftime("%H:%M:%S")
-            peak_change = stk.get_peak_change()
-            second_line = (
-                f"[bold yellow]-> Crit:[/bold yellow] {crit_time_str}, "
-                f"${stk.get_crit_price():.2f} | [bold yellow]Peak:[/bold yellow] {time_max_str}, "
-                f"${stk.get_max_price():.2f}, Vol: {stk.get_vol_at_max_price()} => {colorize_pct(peak_change)}"
-            )
-            table.add_row(second_line)
+        # Row 2: growths
+        table.add_row(
+            f"↳ G% spot→peak: {peak_from_spot:.1f}%",
+            f"G% alert→peak: {peak_from_alert:.1f}%",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        )
+
+        # Row 3: timing
+        table.add_row(
+            f"↳ Time alert→peak: {time_to_peak_str}",
+            f"Peak at: {time_peak}",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        )
 
     console.print(table)
 
@@ -623,13 +701,13 @@ def run_main_loop(
     gainers: list[Stock],
     ref_rate_des: float,
     pct_chg_des: float,
-    pct_chg_after: float,
-    labels: tuple[str, str, str, str],
 ):
     """
     The main loop that repeatedly scrapes the gainers table, updates stocks,
     checks user criteria, displays top 5 if changed, etc.
     """
+    alerted: list[Stock] = []
+
     while dt.now() < MARKET_CLOSE:
         # 1) Refresh the browser to get latest data
         try:
@@ -642,15 +720,22 @@ def run_main_loop(
             print("\n\033[1;33m[WARNING]\033[0m Table did not fully load after refresh...")
 
         # 2) Scrape
-        new_data = scrape_stocks(driver)
+        overview_rows = scrape_overview(driver)
+        technicals_map = scrape_technicals(driver)
+
+        new_data = []
+        for row in overview_rows:
+            rsi = technicals_map.get(row["ticker"])
+            new_data.append(
+                (row["ticker"], row["price"], row["vol"], row["rvol"], rsi)
+            )
         # 3) Process
         changed = process_stocks(
-            gainers, new_data, ref_rate_des, pct_chg_des, pct_chg_after
+            gainers, alerted, new_data, ref_rate_des, pct_chg_des
         )
         # 4) If changed, sort and show top 5
         if changed:
             gainers.sort(key=lambda s: s.get_abs(), reverse=True)
-            show_top_5(gainers, labels)
         # 5) Sleep
         sleep(ref_rate_des if changed else 10)
 
@@ -660,7 +745,7 @@ def main():
     Main entry point for the StockBot application.
     Checks market day, waits if before open, obtains user params, logs in, and runs main loop.
     """
-    ref_rate_des, pct_chg_des, pct_chg_after = get_user_params()
+    ref_rate_des, pct_chg_des = get_user_params()
     # Setup driver & login
     driver = setup_webdriver()
     try:
@@ -678,7 +763,6 @@ def main():
             now = dt.now()
             next_open, next_close = get_next_day(now)
             sec_until_open = (next_open - now).total_seconds() 
-            labels = get_interval_labels(ref_rate_des / 60)
             # Create main list
             gainers = []
             # Wait until market open of next available day
@@ -687,8 +771,7 @@ def main():
                 sleep(sec_until_open)
             # Run main loop
             run_main_loop(
-                next_close, driver, gainers, ref_rate_des, pct_chg_des,
-                                                pct_chg_after, labels
+                next_close, driver, gainers, ref_rate_des, pct_chg_des
             )
             # End-of-day summary
             show_eod_stats(gainers, pct_chg_des)
