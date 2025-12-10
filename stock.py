@@ -89,6 +89,9 @@ class Stock:
     def set_base_price(self, new_price: float):
         self.base_price = new_price
 
+    def set_float_shares(self, new_float_shares: float):
+        self.float_shares = new_float_shares
+
     def get_max_price(self) -> float:
         return self.max_price
 
@@ -148,7 +151,7 @@ class Stock:
             return int(delta.total_seconds() // 60)
         return None
 
-    def update_intervals(
+    def update_technicals(
         self,
         price: float,
         vol: str,

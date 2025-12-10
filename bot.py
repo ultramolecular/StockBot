@@ -9,6 +9,9 @@
 from dotenv import load_dotenv
 from datetime import datetime as dt
 from datetime import timedelta
+from millify import millify
+from openpyxl.descriptors import Float
+from float_provider import FloatProvider
 import openpyxl
 import os
 from pathlib import Path
@@ -44,6 +47,7 @@ STOCK_LIST_CSS = "tr[class*='listRow']"
 STOCK_CSS = "td:nth-child(1) a"
 STOCK_PRICES_CSS = "td:nth-child(3)"
 VOL_CSS = "td:nth-child(4)"
+HEADER_TABS_CSS = "market-screener-header-columnset-tabs"
 URL = "https://www.tradingview.com"
 GAINS_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
 EMAIL = os.getenv("EMAIL", "")
@@ -249,8 +253,30 @@ def click_header_tab(driver: webdriver.Chrome, tab: str):
     """
     Clicks the given header tab on the top gainers table, overview/technicals.
     """
-    # TODO: implement this function
-    pass
+    tab_id = tab
+    # Locate header tabs container
+    container = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located(
+            (By.ID, HEADER_TABS_CSS)
+        )
+    )
+    # Find specific button inside container
+    button = container.find_element(By.ID, tab_id)
+
+    # If we're already on it, do nothing
+    if button.get_attribute("aria-selected") == "true":
+        return
+
+    button.click()
+
+    # Wait until the header signals aria-selected = "true"
+    WebDriverWait(driver, 20).until(
+        lambda d: d.find_element(
+            By.CSS_SELECTOR,
+            f"#{HEADER_TABS_CSS} button#{tab_id}",
+        ).get_attribute("aria-selected")
+        == "true"
+    )
 
 
 def scrape_overview(driver: webdriver.Chrome) -> list[dict]:
@@ -330,10 +356,10 @@ def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[
 
 def process_stocks(
     gainers: list[Stock],
+    float_prov: FloatProvider,
     alerted: list[Stock],
     new_data: list[tuple[str, float, str, float, Optional[float]]],
     pct_chg_des: float,
-    pct_chg_after: float,
 ) -> bool:
     """
     Update each Stock or create new ones based on the newly scraped data.
@@ -348,7 +374,7 @@ def process_stocks(
             stk.set_new_after(price)
 
             # Keep last technicals up to date
-            stk.update_intervals(price, vol, dt.now(), vol, rvol, rsi)
+            stk.update_technicals(price, vol, dt.now(), vol, rvol, rsi)
 
             if new_abs_pct_chg != stk.get_abs():
                 changed = True
@@ -357,6 +383,11 @@ def process_stocks(
 
             # check user criteria
             if stk.get_abs() >= pct_chg_des and not stk.has_met_crit():
+                # Get float for this stock + cache it
+                if stk.float_shares is None:
+                    stk.set_float_shares(float_prov.get_float_shares(stk.get_ticker()))
+                # Recompute vol/float now that we have a float value known
+                stk.update_technicals(price, vol, dt.now(), vol, rvol, rsi)
                 # Build features for scoring
                 vol_shares = Stock.parse_volume_to_shares(vol) or 0.0
                 feats = SignalFeatures(
@@ -471,7 +502,13 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
     table.add_column("Price")
     table.add_column("Volume/Float")
 
-    for s in stocks:
+    ordered_stocks = sorted(
+        stocks,
+        key=lambda s: s.get_abs(),
+        reverse=True,
+    )
+
+    for s in ordered_stocks:
         score = s.get_crit_score() or 0
         tier = s.get_crit_tier() or "-"
         score_style = style_for_score(score)
@@ -566,6 +603,10 @@ def export_eod_stats_to_excel(
         "Tier",
         "Peak%FromSpot",
         "Time2Peak(min)",
+        "FloatShares",
+        "CritRVol",
+        "CritRSI",
+        "CritFR",
     ]
     ws.append(headers)
 
@@ -598,6 +639,10 @@ def export_eod_stats_to_excel(
             s.get_crit_tier(),
             peak_from_spot,
             time_to_peak,
+            s.get_float_shares(),
+            s.get_crit_rvol(),
+            s.get_crit_rsi(),
+            s.get_crit_vol_float_ratio(),
         ]
         ws.append(row)
 
@@ -615,6 +660,7 @@ def export_eod_stats_to_excel(
         ws.cell(row=i, column=7).number_format = pct_format
         # Peak%FromSpot
         ws.cell(row=i, column=10).number_format = pct_format
+        # 
 
     fname = f"eod_summary_{date_str}.xlsx"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -652,6 +698,10 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
     table.add_column("Tier", justify="right")
     table.add_column("Peak%FromSpot", justify="right")
     table.add_column("Time2Peak", justify="right")
+    table.add_column("FloatShares", justify="right")
+    table.add_column("RVolume", justify="right")
+    table.add_column("RSI", justify="right")
+    table.add_column("FloatRatio", justify="right")
 
     for s in winners:
         crit_time = s.get_crit_time()
@@ -664,6 +714,11 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
         peak_from_spot = s.get_peak_change_spot()
         time_to_peak = s.get_time_peak_alert()
         crit_score = s.get_crit_score() if s.get_crit_score() is not None else 0
+        float_shares = s.get_float_shares()
+        crit_rvol = s.get_crit_rvol()
+        crit_rsi = s.get_crit_rsi()
+        crit_vol_float_ratio = s.get_crit_vol_float_ratio()
+
 
         volume_str = s.get_vol_at_max_price()
         peak_str = colorize_pct(peak_change)
@@ -673,6 +728,10 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
         time_to_peak_str = f"{time_to_peak} mins" if time_to_peak is not None else "--"
         crit_score_str = f"{crit_score:+d}"
         crit_tier_str = s.get_crit_tier() if s.get_crit_tier() is not None else "--"
+        float_shares_str = millify(float_shares)
+        crit_rvol_str = str(crit_rvol)
+        crit_rsi_str = str(crit_rsi)
+        crit_vol_float_ratio_str = str(crit_vol_float_ratio)
 
         table.add_row(
             crit_time_str,
@@ -685,7 +744,11 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
             peak_from_spot_str,
             time_to_peak_str,
             crit_score_str,
-            crit_tier_str
+            crit_tier_str,
+            float_shares_str,
+            crit_rvol_str,
+            crit_rsi_str,
+            crit_vol_float_ratio_str
         )
 
     console.print(table)
@@ -698,6 +761,7 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
 def run_main_loop(
     MARKET_CLOSE: dt,
     driver: webdriver.Chrome,
+    float_prov: FloatProvider,
     gainers: list[Stock],
     ref_rate_des: float,
     pct_chg_des: float,
@@ -731,7 +795,7 @@ def run_main_loop(
             )
         # 3) Process
         changed = process_stocks(
-            gainers, alerted, new_data, ref_rate_des, pct_chg_des
+            gainers, float_prov, alerted, new_data, pct_chg_des
         )
         # 4) If changed, sort and show top 5
         if changed:
@@ -745,6 +809,7 @@ def main():
     Main entry point for the StockBot application.
     Checks market day, waits if before open, obtains user params, logs in, and runs main loop.
     """
+    float_prov = FloatProvider()
     ref_rate_des, pct_chg_des = get_user_params()
     # Setup driver & login
     driver = setup_webdriver()
@@ -771,7 +836,7 @@ def main():
                 sleep(sec_until_open)
             # Run main loop
             run_main_loop(
-                next_close, driver, gainers, ref_rate_des, pct_chg_des
+                next_close, driver, float_prov, gainers, ref_rate_des, pct_chg_des
             )
             # End-of-day summary
             show_eod_stats(gainers, pct_chg_des)
