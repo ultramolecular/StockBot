@@ -1,7 +1,11 @@
+from dotenv import load_dotenv
 import os
+from pathlib import Path
 import requests
 from typing import Optional
 
+env_path = Path(".") / ".env"
+load_dotenv(dotenv_path=env_path)
 FMP_KEY = os.getenv("FMP_KEY")
 
 class FloatProvider:
