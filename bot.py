@@ -399,8 +399,6 @@ def scrape_overview(driver: webdriver.Chrome) -> list[dict]:
     if not ensure_header_mode(driver, "overview", timeout=6, retries=3):
         return []
 
-    wait_for_table(driver, 10)
-
     rows = driver.execute_script(
         """
         const rowCss = arguments[0];
@@ -437,8 +435,6 @@ def scrape_technicals(driver: webdriver.Chrome) -> dict[str, float]:
     if not ensure_header_mode(driver, "technicals", timeout=6, retries=3):
         # skip RSI this cycle; don't crash!
         return {}
-
-    wait_for_table(driver)
 
     rows = driver.execute_script(
         """
@@ -1094,10 +1090,10 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
             max_price_str,
             volume_str,
             peak_str,
-            peak_from_spot_str,
-            time_to_peak_str,
             crit_score_str,
             crit_tier_str,
+            peak_from_spot_str,
+            time_to_peak_str,
             float_shares_str,
             crit_rvol_str,
             crit_rsi_str,
@@ -1172,7 +1168,7 @@ def main():
         print(
                 "You",
                 "\033[1;32mare\033[0m logged in." if logged_in
-                        else "\033[1;33m are not\033[0m logged in."
+                        else "\033[1;31mare not\033[0m logged in."
         )
         if not logged_in:
             if HEADLESS:
