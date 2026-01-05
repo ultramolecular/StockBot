@@ -328,13 +328,6 @@ def ensure_header_mode(
             return True
 
         except (TimeoutException, StaleElementReferenceException, WebDriverException) as e:
-            print(f"[WARN] ensure_header_mode({mode}) attempt {attempt}/{retries} failed: {type(e).__name__}")
-
-            try:
-                print("Header data-fields seen:", header_fields(driver))
-            except Exception:
-                pass
-
             # small backoff + tiny nudge scroll (TV sometimes re-renders on scroll)
             sleep(0.25 * attempt)
             try:
@@ -1067,6 +1060,7 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
         crit_rvol = s.get_crit_rvol()
         crit_rsi = s.get_crit_rsi()
         crit_vol_float_ratio = s.get_crit_vol_float_ratio()
+        crit_vol_float_ratio = round(crit_vol_float_ratio, 2) if crit_vol_float_ratio is not None else None
 
 
         volume_str = s.get_vol_at_max_price()
