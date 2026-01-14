@@ -517,6 +517,7 @@ def process_stocks(
                 print(
                     f"\n{stk.get_ticker()} +{stk.get_abs():.2f}% "
                     f"| Score: {score_obj.score:+d} ({score_obj.tier})"
+                    f"| {dt.now().strftime("%H:%M:%S")}"
                 )
 
                 stk.did_meet_crit()
@@ -767,7 +768,7 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
             if rv_spot is not None else "n/a",
             f"[{style_for_rsi(rsi_spot)}]{rsi_spot:.0f}[/]"
             if rsi_spot is not None else "n/a",
-            f"{price_spot_str}",
+            f"${price_spot_str}",
             f"[{style_for_vol(vol_spot_str, float_shares)}]{vol_spot_str}[/]",
         ]
 
@@ -780,7 +781,7 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
             if rv_alert is not None else "n/a",
             f"[{style_for_rsi(rsi_alert)}]{rsi_alert:.0f}[/]"
             if rsi_alert is not None else "n/a",
-            f"{price_alert_str}",
+            f"${price_alert_str}",
             f"[{style_for_vol(vol_alert_str, float_shares)}]{vol_alert_str}[/]",
         ]
 
@@ -793,7 +794,7 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
             f"{rv_peak:.1f}x[/]" if rv_peak is not None else "n/a",
             f"[{style_for_rsi(rsi_peak)}]{rsi_peak:.0f}[/]"
             if rsi_peak is not None else "n/a",
-            f"{price_peak_str}",
+            f"${price_peak_str}",
             f"{vol_peak_str}",
         ]
 

@@ -48,6 +48,8 @@ class Stock:
         self.max_price = price
         self.time_max_price = None
         self.volume_at_max_price = vol
+        self.rvol_at_max_price: Optional[float] = None
+        self.rsi_at_max_price: Optional[float] = None
         self.float_shares: Optional[float] = None
         self.last_volume_str: str = vol
         self.last_rvol: Optional[float] = None
@@ -156,10 +158,10 @@ class Stock:
         return self.CRIT_VOL
 
     def get_peak_rvol(self) -> Optional[float]:
-        return self.CRIT_RVOL
+        return self.rvol_at_max_price
 
     def get_peak_rsi(self) -> Optional[float]:
-        return self.CRIT_RSI
+        return self.rsi_at_max_price
 
     def get_peak_change(self) -> float:
         """
@@ -211,7 +213,8 @@ class Stock:
             self.max_price = price
             self.time_max_price = curr_time
             self.volume_at_max_price = vol
-            
+            self.rvol_at_max_price = rvol
+            self.rsi_at_max_price = rsi
 
     @staticmethod
     def parse_volume_to_shares(vol: str) -> Optional[float]:
