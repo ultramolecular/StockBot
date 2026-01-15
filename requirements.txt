@@ -1,6 +1,10 @@
+millify
 openpyxl
 playsound==1.2.2; platform_system == "Windows"
+playsound; platform_system == "Linux"
+pygobject<3.51; platform_system == "Linux"
 python-dotenv
+requests
 rich
 selenium
-webdriver-manager; platform_system == "Windows"
+webdriver-manager;
