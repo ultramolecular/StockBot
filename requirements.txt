@@ -1,3 +1,4 @@
+black
 millify
 openpyxl
 playsound==1.2.2; platform_system == "Windows"

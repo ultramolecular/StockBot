@@ -56,7 +56,7 @@ class SignalScorer:
                 score += 2
             elif f.vol_float_ratio >= 0.5:
                 score += 1
-        
+
         # RSI - ranges
         if f.rsi:
             # Early momentum
@@ -71,7 +71,7 @@ class SignalScorer:
             # Overbought - penalize
             elif f.rsi >= 90:
                 score -= 2
-        
+
         # Raw % move (bump)
         if f.abs_pct >= 20:
             score += 1
@@ -87,5 +87,5 @@ class SignalScorer:
             tier = "C"
         else:
             tier = "D"
-        
+
         return SignalScore(score, tier)

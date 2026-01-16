@@ -1,14 +1,15 @@
-#-----------------------------------------------------------------------------------------#
+# -----------------------------------------------------------------------------------------#
 # Author:             Josiah Valdez                                                       #
 # Began Development:  February, 7, 2021                                                   #
 #                                                                                         #
 # This is a program that uses selenium to extract data from tradingview.com top gainers,  #
 # calculate and store their prices and percent changes, and send notifications given the  #
 # desired change from the user. It is in constant development, and is sometimes unstable. #
-#-----------------------------------------------------------------------------------------#
-from dotenv import load_dotenv
+# -----------------------------------------------------------------------------------------#
 from datetime import datetime as dt
-from datetime import timedelta
+from datetime import timedelta, timezone
+from discord_notifier import DiscordDMNotifier
+from dotenv import load_dotenv
 from millify import millify
 from float_provider import FloatProvider
 import openpyxl
@@ -18,7 +19,11 @@ from platform import system
 from time import sleep
 from typing import Callable, Optional
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, WebDriverException
+from selenium.common.exceptions import (
+    TimeoutException,
+    StaleElementReferenceException,
+    WebDriverException,
+)
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
@@ -60,6 +65,8 @@ CLOSE_HR = int(os.getenv("CLOSE_HR", ""))
 HEADLESS = int(os.getenv("HEADLESS", "0"))
 EOD_EXPORT_DIR = os.getenv("EOD_EXPORT_PATH", "")
 EXPORT_PATH = Path(EOD_EXPORT_DIR) if EOD_EXPORT_DIR else None
+DISC_BOT_TOKEN = os.getenv("DISC_BOT_TOK", "")
+DISC_USER_ID = os.getenv("DISC_USER_ID", "")
 
 ##############################################################################
 #                           HELPER FUNCTIONS                                 #
@@ -82,7 +89,7 @@ def setup_webdriver() -> webdriver.Chrome:
         options.add_argument(f"--user-data-dir={profile_dir}")
         options.add_argument(f"--profile-directory={profile_name}")
 
-    if HEADLESS: 
+    if HEADLESS:
         options.add_argument("--headless=new")
         options.add_argument("--window-size=1300,1044")
 
@@ -145,7 +152,7 @@ def get_next_day(now=None) -> tuple[dt, dt]:
         next_mon = start_date + timedelta(days=days_ahead)
         # Update MARKET_CLOSE to account for the new date
         return next_mon, next_mon.replace(hour=CLOSE_HR, minute=0, second=0)
-    
+
     # If a weekday and it's before market open and close, run then
     if now < start_date or now < end_date:
         return start_date, end_date
@@ -154,7 +161,7 @@ def get_next_day(now=None) -> tuple[dt, dt]:
         next_day = start_date + timedelta(days=1)
         # Check if the next day is Saturday to skip to Monday
         if next_day.weekday() == 5:
-            next_day += timedelta(days=2) 
+            next_day += timedelta(days=2)
 
         return next_day, next_day.replace(hour=CLOSE_HR, minute=0, second=0)
 
@@ -190,7 +197,8 @@ def is_logged_in(driver: webdriver.Chrome, timeout: int = 10) -> bool:
 
     # Fallback: check for common logged-out wall text
     page_text = driver.execute_script(
-            "return (document.body && document.body.innerText) ? document.body.innerText : ''")
+        "return (document.body && document.body.innerText) ? document.body.innerText : ''"
+    )
     lowered = page_text.lower()
 
     # Keep these minimal so it doesn't false-positive
@@ -265,7 +273,7 @@ def wait_for_login(driver: webdriver.Chrome, timeout: int = 15):
     """
     # Wait until username field is no longer visible
     WebDriverWait(driver, timeout).until(
-            EC.invisibility_of_element_located((By.ID, CREDS_IDS[0]))
+        EC.invisibility_of_element_located((By.ID, CREDS_IDS[0]))
     )
 
 
@@ -294,7 +302,7 @@ def wait_for_table(driver: webdriver.Chrome, timeout=15):
 
 def header_fields(driver: webdriver.Chrome) -> list[str]:
     return driver.execute_script(
-            """
+        """
         const ths = document.querySelectorAll("table thead th[data-field]");
         return Array.from(ths).map(th => th.getAttribute("data-field") || "");
         """
@@ -327,7 +335,11 @@ def ensure_header_mode(
             wait_for_header_mode(driver, mode, timeout=timeout)
             return True
 
-        except (TimeoutException, StaleElementReferenceException, WebDriverException) as e:
+        except (
+            TimeoutException,
+            StaleElementReferenceException,
+            WebDriverException,
+        ) as e:
             # small backoff + tiny nudge scroll (TV sometimes re-renders on scroll)
             sleep(0.25 * attempt)
             try:
@@ -421,6 +433,7 @@ def scrape_overview(driver: webdriver.Chrome) -> list[dict]:
     )
     return rows
 
+
 def scrape_technicals(driver: webdriver.Chrome) -> dict[str, float]:
     """
     Scrape technicals tab for RSI.
@@ -464,6 +477,7 @@ def in_gainers(gainers: list[Stock], filt: Callable[[Stock], bool]) -> Optional[
 
 
 def process_stocks(
+    notifier: Optional[DiscordDMNotifier],
     gainers: list[Stock],
     float_prov: FloatProvider,
     alerted: list[Stock],
@@ -513,12 +527,73 @@ def process_stocks(
                 score_obj = SignalScorer.score(feats)
                 stk.snapshot_crit_technicals(score_obj.score, score_obj.tier)
 
-                # Log simple line for now
+                ts = dt.now().strftime("%H:%M:%S")
+                shares = stk.get_float_shares()
+                float_str = fmt_float_m(shares)
+                fr = stk.get_crit_vol_float_ratio()
+                rsi_val = stk.get_crit_rsi()
+
+                msg = (
+                    f"🚨 {stk.get_ticker()} +{stk.get_abs():.2f}% @ ${price:.2f} | "
+                    f"{score_obj.tier}{score_obj.score:+d} | "
+                    f"Float {float_str}M | RV {stk.get_crit_rvol():.1f}x | "
+                    f"RSI {rsi_val if rsi_val else 0:.0f} | FR {fr:.2f}x | {ts}"
+                )
+
+                embed = {
+                    "title": f"🚨 {stk.get_ticker()} ({score_obj.tier}{score_obj.score:+d}) 📈",
+                    "url": tv_gainers_link(stk.get_ticker()),
+                    "color": discord_color_for_tier(score_obj.tier, score_obj.score),
+                    "description": f"**+{stk.get_abs():.2f}%** at **${price:.2f}**",
+                    "fields": [
+                        {"name": "Float", "value": float_str, "inline": True},
+                        {
+                            "name": "RVOL",
+                            "value": (
+                                f"{stk.get_crit_rvol():.1f}x"
+                                if stk.get_crit_rvol() is not None
+                                else "n/a"
+                            ),
+                            "inline": True,
+                        },
+                        {
+                            "name": "RSI",
+                            "value": (
+                                f"{rsi_val:.0f}" if rsi_val is not None else "n/a"
+                            ),
+                            "inline": True,
+                        },
+                        {
+                            "name": "Float Rotation (FR)",
+                            "value": (f"{fr:.2f}x" if fr is not None else "n/a"),
+                            "inline": True,
+                        },
+                        {
+                            "name": "Volume",
+                            "value": (stk.get_crit_vol() or "n/a"),
+                            "inline": True,
+                        },
+                        {"name": "Time", "value": ts, "inline": True},
+                    ],
+                    "footer": {"text": "StockBotNotifier • Top Gainers"},
+                    "timestamp": dt.now(timezone.utc).isoformat(),
+                }
+
                 print(
                     f"\n{stk.get_ticker()} +{stk.get_abs():.2f}% "
                     f"| Score: {score_obj.score:+d} ({score_obj.tier})"
-                    f"| {dt.now().strftime("%H:%M:%S")}"
+                    f"| {ts}"
                 )
+
+                if notifier:
+                    try:
+                        notifier.send_embed(embed=embed)
+                    except Exception as e:
+                        print(f"\n\033[1;33m[WARNING]\033[0m Discord DM failed: {e}")
+                        try:
+                            notifier.send_dm(msg)
+                        except Exception:
+                            pass
 
                 stk.did_meet_crit()
                 stk.set_base_price(price)
@@ -658,13 +733,33 @@ def style_for_fr(fr: Optional[float]) -> str:
         return "bold white on red3"
 
 
+def discord_color_for_tier(tier: str, score: int) -> int:
+    if tier == "A":
+        return 0x00BA4F
+    if tier == "B":
+        return 0x92F54C
+    if tier == "C":
+        return 0xEEFF00
+    return 0xE74C3C
+
+
+def fmt_float_m(shares: Optional[float]) -> str:
+    if not shares:
+        return "n/a"
+    return f"{shares / 1_000_000:.2f}M"
+
+
+def tv_gainers_link(ticker: str) -> str:
+    return f"https://www.tradingview.com/symbols/{ticker}/"
+
+
 def show_alert_watchlist(stocks: list[Stock]) -> None:
     """
     Render up to 10 alerted stocks in a table/card layout for user to see.
     """
     if not stocks:
         return
-    
+
     console = Console()
     table = Table(
         show_header=False,
@@ -684,21 +779,15 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
 
         # SPOTTED
         time_spotted = getattr(s, "TIME_ENTERED", None)
-        time_spotted_str = (
-            time_spotted.strftime("%H:%M:%S") if time_spotted else "n/a"
-        )
+        time_spotted_str = time_spotted.strftime("%H:%M:%S") if time_spotted else "n/a"
 
         # ALERTED
         crit_time = s.get_crit_time()
-        time_alerted_str = (
-            crit_time.strftime("%H:%M:%S") if crit_time else "n/a"
-        )
+        time_alerted_str = crit_time.strftime("%H:%M:%S") if crit_time else "n/a"
 
         # PEAK
         peak_time = s.get_time_max_price()
-        time_peaked_str = (
-            peak_time.strftime("%H:%M:%S") if peak_time else "n/a"
-        )
+        time_peaked_str = peak_time.strftime("%H:%M:%S") if peak_time else "n/a"
 
         time_to_peak = s.get_time_peak_alert()
         time_to_peak_str = f"{time_to_peak} min" if time_to_peak is not None else "n/a"
@@ -711,8 +800,7 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
         float_shares = s.get_float_shares()
         float_m = float_shares / 1_000_000 if float_shares else None
         float_str = (
-                f"[{style_for_float(float_shares)}]{float_m:.2f}M[/]"
-                if float_m else "n/a"
+            f"[{style_for_float(float_shares)}]{float_m:.2f}M[/]" if float_m else "n/a"
         )
 
         fr_alert = s.get_crit_vol_float_ratio()
@@ -756,18 +844,21 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
         vol_peak_str = vol_peak or "n/a"
 
         # Row 1: Tick+Score | TimeSpot | Float | RV | RSI | Price | Vol
-        row1_col1 = (
-            f"[{style_for_score(score)}]{ticker} "
-            f"({tier} {score:+d})[/]"
-        )
+        row1_col1 = f"[{style_for_score(score)}]{ticker} " f"({tier} {score:+d})[/]"
         row1 = [
             row1_col1,
             f"{time_spotted_str}",
             f"{float_str}",
-            f"[{style_for_rvol(rv_spot)}]{rv_spot:.1f}x[/]"
-            if rv_spot is not None else "n/a",
-            f"[{style_for_rsi(rsi_spot)}]{rsi_spot:.0f}[/]"
-            if rsi_spot is not None else "n/a",
+            (
+                f"[{style_for_rvol(rv_spot)}]{rv_spot:.1f}x[/]"
+                if rv_spot is not None
+                else "n/a"
+            ),
+            (
+                f"[{style_for_rsi(rsi_spot)}]{rsi_spot:.0f}[/]"
+                if rsi_spot is not None
+                else "n/a"
+            ),
             f"${price_spot_str}",
             f"[{style_for_vol(vol_spot_str, float_shares)}]{vol_spot_str}[/]",
         ]
@@ -777,10 +868,16 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
             f"{g_spot_to_peak:.1f}% / {g_alert_to_peak:.1f}%",
             f"{time_alerted_str}",
             f"[{style_for_fr(fr_alert)}]{fr_alert_str}[/]",
-            f"[{style_for_rvol(rv_alert)}]{rv_alert:.1f}x[/]"
-            if rv_alert is not None else "n/a",
-            f"[{style_for_rsi(rsi_alert)}]{rsi_alert:.0f}[/]"
-            if rsi_alert is not None else "n/a",
+            (
+                f"[{style_for_rvol(rv_alert)}]{rv_alert:.1f}x[/]"
+                if rv_alert is not None
+                else "n/a"
+            ),
+            (
+                f"[{style_for_rsi(rsi_alert)}]{rsi_alert:.0f}[/]"
+                if rsi_alert is not None
+                else "n/a"
+            ),
             f"${price_alert_str}",
             f"[{style_for_vol(vol_alert_str, float_shares)}]{vol_alert_str}[/]",
         ]
@@ -790,10 +887,16 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
             f"{time_to_peak_str}",
             f"{time_peaked_str}",
             f"[{style_for_fr(fr_peak)}]{fr_peak_str}[/]",
-            f"[{style_for_rvol(rv_peak)}]"
-            f"{rv_peak:.1f}x[/]" if rv_peak is not None else "n/a",
-            f"[{style_for_rsi(rsi_peak)}]{rsi_peak:.0f}[/]"
-            if rsi_peak is not None else "n/a",
+            (
+                f"[{style_for_rvol(rv_peak)}]" f"{rv_peak:.1f}x[/]"
+                if rv_peak is not None
+                else "n/a"
+            ),
+            (
+                f"[{style_for_rsi(rsi_peak)}]{rsi_peak:.0f}[/]"
+                if rsi_peak is not None
+                else "n/a"
+            ),
             f"${price_peak_str}",
             f"{vol_peak_str}",
         ]
@@ -809,7 +912,7 @@ def show_alert_watchlist(stocks: list[Stock]) -> None:
 
 
 def export_eod_stats_to_excel(
-        winners: list[Stock], pct_chg_des: float, export_dir: Path
+    winners: list[Stock], pct_chg_des: float, export_dir: Path
 ):
     """
     Create/write to an Excel file with the summary of stocks that met criteria.
@@ -888,7 +991,7 @@ def export_eod_stats_to_excel(
         ws.cell(row=i, column=7).number_format = pct_format
         # Peak%FromSpot
         ws.cell(row=i, column=10).number_format = pct_format
-        # 
+        #
 
     fname = f"eod_summary_{pct_chg_des}%_{date_str}.xlsx"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -898,7 +1001,9 @@ def export_eod_stats_to_excel(
     print(f"End-of-day summary exported to: {fpath}")
 
 
-def export_all_seen_to_excel(stocks: list[Stock], pct_chg_des: float, export_dir: Path) -> None:
+def export_all_seen_to_excel(
+    stocks: list[Stock], pct_chg_des: float, export_dir: Path
+) -> None:
     """
     Export *every* ticker that appeared in Top Gainers at any point during the session.
     One row per ticker (summary-style, not tick-by-tick).
@@ -968,43 +1073,45 @@ def export_all_seen_to_excel(stocks: list[Stock], pct_chg_des: float, export_dir
         peak_from_alert = s.get_peak_change() / 100.0
         time_alert_to_peak = s.get_time_peak_alert()
 
-        ws.append([
-            time_entered,
-            ticker,
-            og_price,
-            og_vol,
-            og_rvol,
-            og_rsi,
-            met,
-            crit_time,
-            crit_price,
-            crit_score,
-            crit_tier,
-            float_shares,
-            crit_rvol,
-            crit_rsi,
-            crit_fr,
-            peak_time,
-            max_price,
-            vol_at_peak,
-            peak_from_spot,
-            peak_from_alert,
-            time_alert_to_peak,
-        ])
+        ws.append(
+            [
+                time_entered,
+                ticker,
+                og_price,
+                og_vol,
+                og_rvol,
+                og_rsi,
+                met,
+                crit_time,
+                crit_price,
+                crit_score,
+                crit_tier,
+                float_shares,
+                crit_rvol,
+                crit_rsi,
+                crit_fr,
+                peak_time,
+                max_price,
+                vol_at_peak,
+                peak_from_spot,
+                peak_from_alert,
+                time_alert_to_peak,
+            ]
+        )
 
     # Format time / currency / percent columns
     for i in range(2, len(stocks) + 2):
-        ws.cell(row=i, column=1).number_format = date_format   # TimeEntered
-        ws.cell(row=i, column=4).number_format = "@"           # OG_Vol (string)
-        ws.cell(row=i, column=8).number_format = date_format   # CritTime
+        ws.cell(row=i, column=1).number_format = date_format  # TimeEntered
+        ws.cell(row=i, column=4).number_format = "@"  # OG_Vol (string)
+        ws.cell(row=i, column=8).number_format = date_format  # CritTime
         ws.cell(row=i, column=16).number_format = date_format  # PeakTime
 
-        ws.cell(row=i, column=3).number_format = currency_format   # OG_Price
-        ws.cell(row=i, column=9).number_format = currency_format   # CritPrice
+        ws.cell(row=i, column=3).number_format = currency_format  # OG_Price
+        ws.cell(row=i, column=9).number_format = currency_format  # CritPrice
         ws.cell(row=i, column=17).number_format = currency_format  # MaxPrice
 
-        ws.cell(row=i, column=19).number_format = pct_format   # Peak%FromSpot
-        ws.cell(row=i, column=20).number_format = pct_format   # Peak%FromAlert
+        ws.cell(row=i, column=19).number_format = pct_format  # Peak%FromSpot
+        ws.cell(row=i, column=20).number_format = pct_format  # Peak%FromAlert
 
     fname = f"all_gainers_{pct_chg_des}%_{date_str}.xlsx"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -1061,8 +1168,9 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
         crit_rvol = s.get_crit_rvol()
         crit_rsi = s.get_crit_rsi()
         crit_vol_float_ratio = s.get_crit_vol_float_ratio()
-        crit_vol_float_ratio = round(crit_vol_float_ratio, 2) if crit_vol_float_ratio is not None else None
-
+        crit_vol_float_ratio = (
+            round(crit_vol_float_ratio, 2) if crit_vol_float_ratio is not None else None
+        )
 
         volume_str = s.get_vol_at_max_price()
         peak_str = colorize_pct(peak_change)
@@ -1092,7 +1200,7 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
             float_shares_str,
             crit_rvol_str,
             crit_rsi_str,
-            crit_vol_float_ratio_str
+            crit_vol_float_ratio_str,
         )
 
     console.print(table)
@@ -1103,6 +1211,7 @@ def show_eod_stats(gainers: list[Stock], pct_chg_des: float):
 
 
 def run_main_loop(
+    notifier: Optional[DiscordDMNotifier],
     MARKET_CLOSE: dt,
     driver: webdriver.Chrome,
     float_prov: FloatProvider,
@@ -1121,12 +1230,16 @@ def run_main_loop(
         try:
             driver.refresh()
         except TimeoutException:
-            print("\n\033[1;33m[WARNING]\033[0m Page refresh timed out, continuing anyway...")
+            print(
+                "\n\033[1;33m[WARNING]\033[0m Page refresh timed out, continuing anyway..."
+            )
         try:
             wait_for_table(driver, 12)
         except TimeoutException:
-            print("\n\033[1;33m[WARNING]\033[0m Table did not fully load after refresh...")
-  
+            print(
+                "\n\033[1;33m[WARNING]\033[0m Table did not fully load after refresh..."
+            )
+
         # 2) Scrape
         overview_rows = scrape_overview(driver)
         technicals_map = scrape_technicals(driver)
@@ -1134,12 +1247,10 @@ def run_main_loop(
         new_data = []
         for row in overview_rows:
             rsi = technicals_map.get(row["ticker"])
-            new_data.append(
-                (row["ticker"], row["price"], row["vol"], row["rvol"], rsi)
-            )
+            new_data.append((row["ticker"], row["price"], row["vol"], row["rvol"], rsi))
         # 3) Process
         changed = process_stocks(
-            gainers, float_prov, alerted, new_data, pct_chg_des
+            notifier, gainers, float_prov, alerted, new_data, pct_chg_des
         )
         # 4) If changed, sort and show top 5
         if changed:
@@ -1155,20 +1266,29 @@ def main():
     """
     float_prov = FloatProvider()
     ref_rate_des, pct_chg_des = get_user_params()
+
+    notifier = None
+    if DISC_BOT_TOKEN and DISC_USER_ID:
+        notifier = DiscordDMNotifier(DISC_BOT_TOKEN, DISC_USER_ID)
+
     # Setup driver & login
     driver = setup_webdriver()
     try:
         driver.get(URL)
         logged_in = is_logged_in(driver)
         print(
-                "You",
-                "\033[1;32mare\033[0m logged in." if logged_in
-                        else "\033[1;31mare not\033[0m logged in."
+            "You",
+            (
+                "\033[1;32mare\033[0m logged in."
+                if logged_in
+                else "\033[1;31mare not\033[0m logged in."
+            ),
         )
         if not logged_in:
             if HEADLESS:
                 raise RuntimeError(
-                        "Not logged in. Run once non-headless to authenticate.")
+                    "Not logged in. Run once non-headless to authenticate."
+                )
             driver.get(URL)
             login_to_tradingview(driver, EMAIL, PASS)
             # Check recaptcha
@@ -1183,16 +1303,24 @@ def main():
             # Get next market day
             now = dt.now()
             next_open, next_close = get_next_day(now)
-            sec_until_open = (next_open - now).total_seconds() 
+            sec_until_open = (next_open - now).total_seconds()
             # Create main list
             gainers = []
             # Wait until market open of next available day
             if sec_until_open > 0:
-                print(f"\nWaiting until market open on {next_open.strftime('%a @ %H:%M:%S')}...")
+                print(
+                    f"\nWaiting until market open on {next_open.strftime('%a @ %H:%M:%S')}..."
+                )
                 sleep(sec_until_open)
             # Run main loop
             run_main_loop(
-                next_close, driver, float_prov, gainers, ref_rate_des, pct_chg_des
+                notifier,
+                next_close,
+                driver,
+                float_prov,
+                gainers,
+                ref_rate_des,
+                pct_chg_des,
             )
 
             # End-of-day summary

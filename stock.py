@@ -1,23 +1,24 @@
-#-------------------------------------------------------------------------------------------------------#
+# -------------------------------------------------------------------------------------------------------#
 # Author:             Josiah Valdez                                                                     #
 # Began Development:  March 16, 2021                                                                    #
 #                                                                                                       #
 # Stock class that keeps track of each individual stock's ticker,price, original price (@ 8:30 am CDT), #
 # absolute pct chg, the time it entered the gainers list and its age, and a queue/list of its past      #
 # prices up to the last 20 minutes.                                                                     #
-#-------------------------------------------------------------------------------------------------------#
+# -------------------------------------------------------------------------------------------------------#
 from datetime import datetime
 from typing import Optional
 
 
 class Stock:
-    def __init__(self,
-         ticker: str,
-         price: float,
-         vol: str,
-         rvol: float,
-         rsi: float,
-         curr_time: datetime,
+    def __init__(
+        self,
+        ticker: str,
+        price: float,
+        vol: str,
+        rvol: float,
+        rsi: float,
+        curr_time: datetime,
     ):
         # Entry snapshot constants
         self.TICKER = ticker
@@ -143,14 +144,14 @@ class Stock:
         return self.CRIT_RSI
 
     def get_crit_vol_float_ratio(self) -> Optional[float]:
-        return self.CRIT_VOL_FLOAT_RATIO 
+        return self.CRIT_VOL_FLOAT_RATIO
 
     def get_float_shares(self) -> Optional[float]:
         return self.float_shares
 
     def get_crit_score(self) -> Optional[int]:
         return self.CRIT_SCORE
-    
+
     def get_crit_tier(self) -> Optional[str]:
         return self.CRIT_TIER
 

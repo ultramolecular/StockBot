@@ -8,9 +8,10 @@ env_path = Path(".") / ".env"
 load_dotenv(dotenv_path=env_path)
 FMP_KEY = os.getenv("FMP_KEY")
 
+
 class FloatProvider:
     def __init__(self):
-        self.cache: dict[str, float] = {} # ticker -> shares
+        self.cache: dict[str, float] = {}  # ticker -> shares
 
     def get_float_shares(self, ticker: str) -> Optional[float]:
         tick = ticker.upper()
@@ -20,8 +21,8 @@ class FloatProvider:
             return None
 
         url = (
-                "https://financialmodelingprep.com/stable/shares-float"
-                f"?symbol={tick}&apikey={FMP_KEY}"
+            "https://financialmodelingprep.com/stable/shares-float"
+            f"?symbol={tick}&apikey={FMP_KEY}"
         )
         try:
             r = requests.get(url, timeout=5)
